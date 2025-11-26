@@ -15,8 +15,11 @@ class AuthService {
   );
 
   static const String _passwordHashKey = 'user_password_hash';
+  static const String _pinHashKey = 'user_pin_hash';
   static const String _firstTimeKey = 'is_first_time';
   static const String _biometricsEnabledKey = 'biometrics_enabled';
+  static const String _authMethodKey =
+      'auth_method'; // 'pin', 'password', 'biometric'
 
   final LocalAuthentication _localAuth = LocalAuthentication();
 
@@ -38,8 +41,41 @@ class AuthService {
       final passwordHash = _hashPassword(password);
       await _storage.write(key: _passwordHashKey, value: passwordHash);
       await _storage.write(key: _firstTimeKey, value: 'false');
+      await _storage.write(key: _authMethodKey, value: 'password');
 
       return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Create and store the user's PIN (6 digits)
+  Future<bool> createPIN(String pin) async {
+    try {
+      if (pin.isEmpty || pin.length != 6) return false;
+
+      // Verify PIN contains only digits
+      if (!RegExp(r'^[0-9]{6}$').hasMatch(pin)) return false;
+
+      final pinHash = _hashPassword(pin);
+      await _storage.write(key: _pinHashKey, value: pinHash);
+      await _storage.write(key: _firstTimeKey, value: 'false');
+      await _storage.write(key: _authMethodKey, value: 'pin');
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Verify the provided PIN against stored hash
+  Future<bool> verifyPIN(String pin) async {
+    try {
+      final storedHash = await _storage.read(key: _pinHashKey);
+      if (storedHash == null) return false;
+
+      final pinHash = _hashPassword(pin);
+      return pinHash == storedHash;
     } catch (e) {
       return false;
     }
@@ -163,6 +199,8 @@ class AuthService {
 
       if (isAuthenticated) {
         await setBiometricEnabled(true);
+        await _storage.write(key: _firstTimeKey, value: 'false');
+        await _storage.write(key: _authMethodKey, value: 'biometric');
         return true;
       }
       return false;
@@ -171,12 +209,29 @@ class AuthService {
     }
   }
 
+  /// Get the authentication method type
+  Future<String?> getAuthMethod() async {
+    try {
+      return await _storage.read(key: _authMethodKey);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Check if authentication method is set up
+  Future<bool> isAuthMethodSetup() async {
+    final method = await getAuthMethod();
+    return method != null;
+  }
+
   /// Reset all authentication data (for testing or reset functionality)
   Future<bool> resetAuth() async {
     try {
       await _storage.delete(key: _passwordHashKey);
+      await _storage.delete(key: _pinHashKey);
       await _storage.delete(key: _firstTimeKey);
       await _storage.delete(key: _biometricsEnabledKey);
+      await _storage.delete(key: _authMethodKey);
       return true;
     } catch (e) {
       return false;

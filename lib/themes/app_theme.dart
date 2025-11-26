@@ -223,21 +223,21 @@ class AppTheme {
       primarySwatch: AppColors.textSwatch,
 
       // Background
-      scaffoldBackgroundColor: AppColors.primaryText,
-      canvasColor: AppColors.primaryText,
+      scaffoldBackgroundColor: AppColors.lightBackground,
+      canvasColor: AppColors.lightBackground,
 
       // Typography
       fontFamily: 'ProductSans',
-      textTheme: _buildTextTheme(AppColors.primaryBackground),
+      textTheme: _buildTextTheme(AppColors.lightTextPrimary),
 
       // App Bar
       appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.primaryText,
-        foregroundColor: AppColors.primaryBackground,
-        elevation: 1,
+        backgroundColor: AppColors.lightBackground,
+        foregroundColor: AppColors.lightTextPrimary,
+        elevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
-          color: AppColors.primaryBackground,
+          color: AppColors.lightTextPrimary,
           fontSize: 20,
           fontWeight: FontWeight.w600,
           fontFamily: 'ProductSans',
@@ -246,6 +246,93 @@ class AppTheme {
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.dark,
           statusBarBrightness: Brightness.light,
+        ),
+      ),
+
+      // Elevated Button
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.accent,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        ),
+      ),
+
+      // Text Button
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.accent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+
+      // Outlined Button
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.lightTextPrimary,
+          side: BorderSide(color: AppColors.lightBorder),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+
+      // Card
+      cardTheme: CardThemeData(
+        color: AppColors.lightSurface,
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      ),
+
+      // Input Decoration
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.lightBackgroundSecondary,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.lightBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.lightBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.accent, width: 2),
+        ),
+        labelStyle: TextStyle(color: AppColors.lightTextSecondary),
+        hintStyle: TextStyle(color: AppColors.lightTextTertiary),
+      ),
+
+      // Icon
+      iconTheme: IconThemeData(
+        color: AppColors.lightTextPrimary,
+        size: 24,
+      ),
+
+      // Dialog
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.lightSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        titleTextStyle: TextStyle(
+          color: AppColors.lightTextPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+        contentTextStyle: TextStyle(
+          color: AppColors.lightTextSecondary,
+          fontSize: 16,
         ),
       ),
     );
@@ -350,5 +437,5 @@ class AppTheme {
   }
 
   /// Returns the current theme mode preference
-  static ThemeMode get themeMode => ThemeMode.dark; // Default to dark theme
+  static ThemeMode get themeMode => ThemeMode.light; // Default to light theme
 }
