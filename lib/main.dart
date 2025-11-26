@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'themes/app_theme.dart';
-import 'package:flutter/foundation.dart';
 
 void main() => runApp(LockerApp());
 
