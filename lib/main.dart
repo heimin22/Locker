@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'themes/app_theme.dart';
 import 'services/auth_service.dart';
 import 'screens/auth_method_selection_screen.dart';
 import 'screens/unlock_screen.dart';
 
-void main() => runApp(const LockerApp());
+void main() => runApp(const ProviderScope(child: LockerApp()));
 
 class LockerApp extends StatelessWidget {
   const LockerApp({super.key});

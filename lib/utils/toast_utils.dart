@@ -41,4 +41,28 @@ class ToastUtils {
       fontSize: 16,
     );
   }
+
+  static void showInfo(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      timeInSecForIosWeb: 2,
+      backgroundColor: AppColors.info,
+      textColor: Colors.white,
+      fontSize: 16,
+    );
+  }
+
+  static void showWarning(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      timeInSecForIosWeb: 2,
+      backgroundColor: AppColors.warning,
+      textColor: Colors.white,
+      fontSize: 16,
+    );
+  }
 }
