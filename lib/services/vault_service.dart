@@ -48,6 +48,7 @@ class VaultService {
   /// Get the vault directory
   Future<Directory> _ensureVaultDirectory() async {
     if (_vaultDirectory != null && await _vaultDirectory!.exists()) {
+      await _ensureNoMediaFile(_vaultDirectory!.path);
       return _vaultDirectory!;
     }
 
@@ -67,12 +68,16 @@ class VaultService {
         .create(recursive: true);
     await Directory('${_vaultDirectory!.path}/temp').create(recursive: true);
 
+    // Prevent system gallery/media scanner from indexing vault contents
+    await _ensureNoMediaFile(_vaultDirectory!.path);
+
     return _vaultDirectory!;
   }
 
   /// Get the decoy directory
   Future<Directory> _ensureDecoyDirectory() async {
     if (_decoyDirectory != null && await _decoyDirectory!.exists()) {
+      await _ensureNoMediaFile(_decoyDirectory!.path);
       return _decoyDirectory!;
     }
 
@@ -88,7 +93,18 @@ class VaultService {
     await Directory('${_decoyDirectory!.path}/documents')
         .create(recursive: true);
 
+    // Prevent media scanner from indexing decoy vault
+    await _ensureNoMediaFile(_decoyDirectory!.path);
+
     return _decoyDirectory!;
+  }
+
+  /// Ensure a .nomedia marker exists to hide from gallery/media scanners
+  Future<void> _ensureNoMediaFile(String directoryPath) async {
+    final noMediaFile = File('$directoryPath/.nomedia');
+    if (!await noMediaFile.exists()) {
+      await noMediaFile.create();
+    }
   }
 
   /// Get subdirectory path for file type

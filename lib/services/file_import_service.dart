@@ -48,11 +48,13 @@ class FileImportService {
 
       // Get all image assets from gallery to find matching ones for deletion
       List<AssetEntity> assetsToDelete = [];
+      final originalPaths = <String>[];
       if (deleteOriginals) {
         assetsToDelete = await _findMatchingAssets(
           images.map((i) => i.name).toList(),
           RequestType.image,
         );
+        originalPaths.addAll(images.map((i) => i.path));
       }
 
       // Convert to FileToVault list
@@ -77,7 +79,11 @@ class FileImportService {
 
       // Delete originals from gallery if requested and import was successful
       if (deleteOriginals && imported.isNotEmpty && assetsToDelete.isNotEmpty) {
-        await _deleteAssetsFromGallery(assetsToDelete);
+        final deleted = await _deleteAssetsFromGallery(assetsToDelete);
+        if (!deleted && originalPaths.isNotEmpty) {
+          // Fallback: try direct file deletion if gallery delete failed
+          await _deleteFiles(originalPaths);
+        }
       }
 
       return ImportResult(
@@ -128,11 +134,14 @@ class FileImportService {
 
       // Get matching assets for deletion
       List<AssetEntity> assetsToDelete = [];
+      final originalPaths = <String>[];
       if (deleteOriginals) {
         assetsToDelete = await _findMatchingAssets(
           result.files.map((f) => f.name).toList(),
           RequestType.video,
         );
+        originalPaths.addAll(
+            result.files.where((f) => f.path != null).map((f) => f.path!));
       }
 
       // Convert to FileToVault list
@@ -158,7 +167,10 @@ class FileImportService {
 
       // Delete originals from gallery
       if (deleteOriginals && imported.isNotEmpty && assetsToDelete.isNotEmpty) {
-        await _deleteAssetsFromGallery(assetsToDelete);
+        final deleted = await _deleteAssetsFromGallery(assetsToDelete);
+        if (!deleted && originalPaths.isNotEmpty) {
+          await _deleteFiles(originalPaths);
+        }
       }
 
       return ImportResult(
@@ -508,11 +520,14 @@ class FileImportService {
 
       // Get matching assets for deletion
       List<AssetEntity> assetsToDelete = [];
+      final originalPaths = <String>[];
       if (deleteOriginals) {
         assetsToDelete = await _findMatchingAssets(
           result.files.map((f) => f.name).toList(),
           RequestType.common,
         );
+        originalPaths.addAll(
+            result.files.where((f) => f.path != null).map((f) => f.path!));
       }
 
       // Convert to FileToVault list
@@ -541,7 +556,10 @@ class FileImportService {
 
       // Delete from gallery if requested
       if (deleteOriginals && imported.isNotEmpty && assetsToDelete.isNotEmpty) {
-        await _deleteAssetsFromGallery(assetsToDelete);
+        final deleted = await _deleteAssetsFromGallery(assetsToDelete);
+        if (!deleted && originalPaths.isNotEmpty) {
+          await _deleteFiles(originalPaths);
+        }
       }
 
       return ImportResult(
