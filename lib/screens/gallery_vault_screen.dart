@@ -8,6 +8,8 @@ import '../services/file_import_service.dart';
 import '../themes/app_colors.dart';
 import '../utils/toast_utils.dart';
 import 'albums_screen.dart';
+import 'media_viewer_screen.dart';
+import 'document_viewer_screen.dart';
 
 /// Gallery vault screen - main screen after authentication
 class GalleryVaultScreen extends ConsumerStatefulWidget {
@@ -737,7 +739,42 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
   }
 
   void _openFile(VaultedFile file) {
-    ToastUtils.showInfo('Opening ${file.originalName}');
+    // Get the current list of files for navigation in viewer
+    final filesAsync = ref.read(vaultNotifierProvider);
+    final allFiles = filesAsync.value ?? [];
+
+    // Filter files based on type for viewer navigation
+    List<VaultedFile> viewerFiles;
+    int initialIndex;
+
+    if (file.isImage || file.isVideo) {
+      // For media files, include both images and videos
+      viewerFiles = allFiles.where((f) => f.isImage || f.isVideo).toList();
+      initialIndex = viewerFiles.indexWhere((f) => f.id == file.id);
+      if (initialIndex == -1) initialIndex = 0;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MediaViewerScreen(
+            initialFile: file,
+            files: viewerFiles,
+            initialIndex: initialIndex,
+          ),
+        ),
+      );
+    } else if (file.isDocument) {
+      // For documents, open document viewer
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DocumentViewerScreen(file: file),
+        ),
+      );
+    } else {
+      // For other files, show info
+      ToastUtils.showInfo('Preview not available for ${file.originalName}');
+    }
   }
 
   Widget _buildEmptyState(VaultedFileType? filterType) {

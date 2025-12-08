@@ -6,6 +6,8 @@ import '../models/vaulted_file.dart';
 import '../providers/vault_providers.dart';
 import '../themes/app_colors.dart';
 import '../utils/toast_utils.dart';
+import 'media_viewer_screen.dart';
+import 'document_viewer_screen.dart';
 
 /// Screen for viewing album details and files
 class AlbumDetailScreen extends ConsumerStatefulWidget {
@@ -398,7 +400,35 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
   }
 
   void _openFile(VaultedFile file) {
-    ToastUtils.showInfo('Opening ${file.originalName}');
+    // Get files in album for viewer navigation
+    final filesAsync = ref.read(filesInAlbumProvider(widget.albumId));
+    final allFiles = filesAsync.value ?? [];
+
+    if (file.isImage || file.isVideo) {
+      final viewerFiles =
+          allFiles.where((f) => f.isImage || f.isVideo).toList();
+      final initialIndex = viewerFiles.indexWhere((f) => f.id == file.id);
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MediaViewerScreen(
+            initialFile: file,
+            files: viewerFiles.isNotEmpty ? viewerFiles : [file],
+            initialIndex: initialIndex >= 0 ? initialIndex : 0,
+          ),
+        ),
+      );
+    } else if (file.isDocument) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DocumentViewerScreen(file: file),
+        ),
+      );
+    } else {
+      ToastUtils.showInfo('Preview not available for ${file.originalName}');
+    }
   }
 
   Future<void> _removeSelectedFromAlbum() async {
