@@ -60,6 +60,17 @@ class VaultedFile {
   final String? thumbnailPath;
   final Map<String, dynamic>? metadata;
 
+  // New fields for organization
+  final List<String> tags;
+  final bool isFavorite;
+  final bool isEncrypted;
+  final String? encryptionIv; // Initialization vector for AES encryption
+  final bool isDecoy; // Flag for decoy mode files
+  final DateTime? lastViewed;
+  final int viewCount;
+  final String? notes;
+  final List<String> albumIds; // Albums this file belongs to
+
   const VaultedFile({
     required this.id,
     required this.originalName,
@@ -72,6 +83,15 @@ class VaultedFile {
     this.dateModified,
     this.thumbnailPath,
     this.metadata,
+    this.tags = const [],
+    this.isFavorite = false,
+    this.isEncrypted = false,
+    this.encryptionIv,
+    this.isDecoy = false,
+    this.lastViewed,
+    this.viewCount = 0,
+    this.notes,
+    this.albumIds = const [],
   });
 
   /// Create a copy with updated fields
@@ -87,6 +107,15 @@ class VaultedFile {
     DateTime? dateModified,
     String? thumbnailPath,
     Map<String, dynamic>? metadata,
+    List<String>? tags,
+    bool? isFavorite,
+    bool? isEncrypted,
+    String? encryptionIv,
+    bool? isDecoy,
+    DateTime? lastViewed,
+    int? viewCount,
+    String? notes,
+    List<String>? albumIds,
   }) {
     return VaultedFile(
       id: id ?? this.id,
@@ -100,8 +129,89 @@ class VaultedFile {
       dateModified: dateModified ?? this.dateModified,
       thumbnailPath: thumbnailPath ?? this.thumbnailPath,
       metadata: metadata ?? this.metadata,
+      tags: tags ?? List.from(this.tags),
+      isFavorite: isFavorite ?? this.isFavorite,
+      isEncrypted: isEncrypted ?? this.isEncrypted,
+      encryptionIv: encryptionIv ?? this.encryptionIv,
+      isDecoy: isDecoy ?? this.isDecoy,
+      lastViewed: lastViewed ?? this.lastViewed,
+      viewCount: viewCount ?? this.viewCount,
+      notes: notes ?? this.notes,
+      albumIds: albumIds ?? List.from(this.albumIds),
     );
   }
+
+  /// Add a tag
+  VaultedFile addTag(String tag) {
+    if (tags.contains(tag.toLowerCase().trim())) return this;
+    return copyWith(
+      tags: [...tags, tag.toLowerCase().trim()],
+      dateModified: DateTime.now(),
+    );
+  }
+
+  /// Add multiple tags
+  VaultedFile addTags(List<String> newTags) {
+    final normalizedTags =
+        newTags.map((t) => t.toLowerCase().trim()).toSet().toList();
+    final tagsToAdd =
+        normalizedTags.where((t) => !tags.contains(t) && t.isNotEmpty).toList();
+    if (tagsToAdd.isEmpty) return this;
+    return copyWith(
+      tags: [...tags, ...tagsToAdd],
+      dateModified: DateTime.now(),
+    );
+  }
+
+  /// Remove a tag
+  VaultedFile removeTag(String tag) {
+    final normalizedTag = tag.toLowerCase().trim();
+    if (!tags.contains(normalizedTag)) return this;
+    return copyWith(
+      tags: tags.where((t) => t != normalizedTag).toList(),
+      dateModified: DateTime.now(),
+    );
+  }
+
+  /// Toggle favorite status
+  VaultedFile toggleFavorite() {
+    return copyWith(
+      isFavorite: !isFavorite,
+      dateModified: DateTime.now(),
+    );
+  }
+
+  /// Mark as viewed
+  VaultedFile markViewed() {
+    return copyWith(
+      lastViewed: DateTime.now(),
+      viewCount: viewCount + 1,
+    );
+  }
+
+  /// Add to album
+  VaultedFile addToAlbum(String albumId) {
+    if (albumIds.contains(albumId)) return this;
+    return copyWith(
+      albumIds: [...albumIds, albumId],
+      dateModified: DateTime.now(),
+    );
+  }
+
+  /// Remove from album
+  VaultedFile removeFromAlbum(String albumId) {
+    if (!albumIds.contains(albumId)) return this;
+    return copyWith(
+      albumIds: albumIds.where((id) => id != albumId).toList(),
+      dateModified: DateTime.now(),
+    );
+  }
+
+  /// Check if file has a specific tag
+  bool hasTag(String tag) => tags.contains(tag.toLowerCase().trim());
+
+  /// Check if file is in a specific album
+  bool isInAlbum(String albumId) => albumIds.contains(albumId);
 
   /// Convert to JSON map
   Map<String, dynamic> toJson() {
@@ -117,6 +227,15 @@ class VaultedFile {
       'dateModified': dateModified?.toIso8601String(),
       'thumbnailPath': thumbnailPath,
       'metadata': metadata,
+      'tags': tags,
+      'isFavorite': isFavorite,
+      'isEncrypted': isEncrypted,
+      'encryptionIv': encryptionIv,
+      'isDecoy': isDecoy,
+      'lastViewed': lastViewed?.toIso8601String(),
+      'viewCount': viewCount,
+      'notes': notes,
+      'albumIds': albumIds,
     };
   }
 
@@ -136,6 +255,22 @@ class VaultedFile {
           : null,
       thumbnailPath: json['thumbnailPath'] as String?,
       metadata: json['metadata'] as Map<String, dynamic>?,
+      tags:
+          (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+              [],
+      isFavorite: json['isFavorite'] as bool? ?? false,
+      isEncrypted: json['isEncrypted'] as bool? ?? false,
+      encryptionIv: json['encryptionIv'] as String?,
+      isDecoy: json['isDecoy'] as bool? ?? false,
+      lastViewed: json['lastViewed'] != null
+          ? DateTime.parse(json['lastViewed'] as String)
+          : null,
+      viewCount: json['viewCount'] as int? ?? 0,
+      notes: json['notes'] as String?,
+      albumIds: (json['albumIds'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
     );
   }
 
@@ -175,9 +310,35 @@ class VaultedFile {
   /// Check if file is a document
   bool get isDocument => type == VaultedFileType.document;
 
+  /// Get tag count
+  int get tagCount => tags.length;
+
+  /// Get album count
+  int get albumCount => albumIds.length;
+
+  /// Check if file has tags
+  bool get hasTags => tags.isNotEmpty;
+
+  /// Get formatted date added
+  String get formattedDateAdded {
+    final now = DateTime.now();
+    final diff = now.difference(dateAdded);
+
+    if (diff.inDays == 0) {
+      if (diff.inHours == 0) {
+        return '${diff.inMinutes}m ago';
+      }
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    } else {
+      return '${dateAdded.day}/${dateAdded.month}/${dateAdded.year}';
+    }
+  }
+
   @override
   String toString() {
-    return 'VaultedFile(id: $id, name: $originalName, type: $type, size: $formattedSize)';
+    return 'VaultedFile(id: $id, name: $originalName, type: $type, size: $formattedSize, tags: $tags, encrypted: $isEncrypted)';
   }
 
   @override
@@ -192,24 +353,53 @@ class VaultedFile {
 
 /// Supported image extensions
 const List<String> supportedImageExtensions = [
-  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif', 'tiff', 'tif'
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'bmp',
+  'heic',
+  'heif',
+  'tiff',
+  'tif'
 ];
 
 /// Supported video extensions
 const List<String> supportedVideoExtensions = [
-  'mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v', '3gp'
+  'mp4',
+  'mov',
+  'avi',
+  'mkv',
+  'webm',
+  'flv',
+  'wmv',
+  'm4v',
+  '3gp'
 ];
 
 /// Supported document extensions
 const List<String> supportedDocumentExtensions = [
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  'txt', 'rtf', 'csv', 'odt', 'ods', 'odp', 'epub'
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'txt',
+  'rtf',
+  'csv',
+  'odt',
+  'ods',
+  'odp',
+  'epub'
 ];
 
 /// Get file type from extension
 VaultedFileType getFileTypeFromExtension(String extension) {
   final ext = extension.toLowerCase().replaceAll('.', '');
-  
+
   if (supportedImageExtensions.contains(ext)) {
     return VaultedFileType.image;
   } else if (supportedVideoExtensions.contains(ext)) {
@@ -223,17 +413,59 @@ VaultedFileType getFileTypeFromExtension(String extension) {
 /// Get file type from MIME type
 VaultedFileType getFileTypeFromMime(String mimeType) {
   final mime = mimeType.toLowerCase();
-  
+
   if (mime.startsWith('image/')) {
     return VaultedFileType.image;
   } else if (mime.startsWith('video/')) {
     return VaultedFileType.video;
   } else if (mime.startsWith('application/pdf') ||
-             mime.startsWith('application/msword') ||
-             mime.startsWith('application/vnd.') ||
-             mime.startsWith('text/')) {
+      mime.startsWith('application/msword') ||
+      mime.startsWith('application/vnd.') ||
+      mime.startsWith('text/')) {
     return VaultedFileType.document;
   }
   return VaultedFileType.other;
 }
 
+/// Predefined tags for quick selection
+const List<String> predefinedTags = [
+  'work',
+  'personal',
+  'family',
+  'friends',
+  'travel',
+  'events',
+  'receipts',
+  'important',
+  'private',
+  'backup',
+  'memories',
+  'documents',
+  'screenshots',
+  'downloads',
+];
+
+/// Tag with color for UI display
+class TagInfo {
+  final String name;
+  final int colorValue;
+  final int usageCount;
+
+  const TagInfo({
+    required this.name,
+    this.colorValue = 0xFF1976D2,
+    this.usageCount = 0,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'colorValue': colorValue,
+        'usageCount': usageCount,
+      };
+
+  factory TagInfo.fromJson(Map<String, dynamic> json) => TagInfo(
+        name: json['name'] as String,
+        colorValue: json['colorValue'] as int? ?? 0xFF1976D2,
+        usageCount: json['usageCount'] as int? ?? 0,
+      );
+}

@@ -1,32 +1,32 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/vaulted_file.dart';
+import '../models/album.dart';
+import '../providers/vault_providers.dart';
 import '../services/file_import_service.dart';
-import '../services/vault_service.dart';
 import '../themes/app_colors.dart';
 import '../utils/toast_utils.dart';
+import 'albums_screen.dart';
 
 /// Gallery vault screen - main screen after authentication
-class GalleryVaultScreen extends StatefulWidget {
+class GalleryVaultScreen extends ConsumerStatefulWidget {
   const GalleryVaultScreen({super.key});
 
   @override
-  State<GalleryVaultScreen> createState() => _GalleryVaultScreenState();
+  ConsumerState<GalleryVaultScreen> createState() => _GalleryVaultScreenState();
 }
 
-class _GalleryVaultScreenState extends State<GalleryVaultScreen>
+class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final VaultService _vaultService = VaultService.instance;
   final FileImportService _importService = FileImportService.instance;
 
-  List<VaultedFile> _allFiles = [];
-  bool _isLoading = true;
   bool _isImporting = false;
   int _importProgress = 0;
   int _importTotal = 0;
-  Set<String> _selectedFiles = {};
-  bool _isSelectionMode = false;
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -38,350 +38,50 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _initializeVault() async {
-    await _vaultService.initialize();
-    await _loadFiles();
-  }
-
-  Future<void> _loadFiles() async {
-    setState(() => _isLoading = true);
-    try {
-      final files = await _vaultService.getAllFiles();
-      setState(() {
-        _allFiles = files;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ToastUtils.showError('Failed to load files');
-    }
-  }
-
-  List<VaultedFile> _getFilteredFiles(int tabIndex) {
-    switch (tabIndex) {
-      case 0:
-        return _allFiles;
-      case 1:
-        return _allFiles.where((f) => f.type == VaultedFileType.image).toList();
-      case 2:
-        return _allFiles.where((f) => f.type == VaultedFileType.video).toList();
-      case 3:
-        return _allFiles
-            .where((f) =>
-                f.type == VaultedFileType.document ||
-                f.type == VaultedFileType.other)
-            .toList();
-      default:
-        return _allFiles;
-    }
-  }
-
-  void _showImportDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => _ImportOptionsSheet(
-        onImportImages: _importImagesFromGallery,
-        onImportVideos: _importVideosFromGallery,
-        onImportMedia: _importMediaFromGallery,
-        onCapturePhoto: _capturePhoto,
-        onRecordVideo: _recordVideo,
-        onImportDocuments: _importDocuments,
-        onImportAnyFiles: _importAnyFiles,
-      ),
-    );
-  }
-
-  Future<void> _importImagesFromGallery() async {
-    Navigator.pop(context);
-    setState(() {
-      _isImporting = true;
-      _importProgress = 0;
-      _importTotal = 0;
-    });
-
-    final result = await _importService.importImagesFromGallery(
-      onProgress: (current, total) {
-        setState(() {
-          _importProgress = current;
-          _importTotal = total;
-        });
-      },
-    );
-
-    setState(() => _isImporting = false);
-
-    if (result.success && result.importedCount > 0) {
-      ToastUtils.showSuccess('Imported ${result.importedCount} image(s)');
-      await _loadFiles();
-    } else if (!result.success) {
-      ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No images selected');
-    }
-  }
-
-  Future<void> _importVideosFromGallery() async {
-    Navigator.pop(context);
-    setState(() {
-      _isImporting = true;
-      _importProgress = 0;
-      _importTotal = 0;
-    });
-
-    final result = await _importService.importVideosFromGallery(
-      onProgress: (current, total) {
-        setState(() {
-          _importProgress = current;
-          _importTotal = total;
-        });
-      },
-    );
-
-    setState(() => _isImporting = false);
-
-    if (result.success && result.importedCount > 0) {
-      ToastUtils.showSuccess('Imported ${result.importedCount} video(s)');
-      await _loadFiles();
-    } else if (!result.success) {
-      ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No videos selected');
-    }
-  }
-
-  Future<void> _importMediaFromGallery() async {
-    Navigator.pop(context);
-    setState(() {
-      _isImporting = true;
-      _importProgress = 0;
-      _importTotal = 0;
-    });
-
-    final result = await _importService.importMediaFromGallery(
-      onProgress: (current, total) {
-        setState(() {
-          _importProgress = current;
-          _importTotal = total;
-        });
-      },
-    );
-
-    setState(() => _isImporting = false);
-
-    if (result.success && result.importedCount > 0) {
-      ToastUtils.showSuccess('Imported ${result.importedCount} file(s)');
-      await _loadFiles();
-    } else if (!result.success) {
-      ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No media selected');
-    }
-  }
-
-  Future<void> _capturePhoto() async {
-    Navigator.pop(context);
-    setState(() => _isImporting = true);
-
-    final result = await _importService.capturePhotoFromCamera();
-
-    setState(() => _isImporting = false);
-
-    if (result.success && result.importedCount > 0) {
-      ToastUtils.showSuccess('Photo saved to vault');
-      await _loadFiles();
-    } else if (!result.success) {
-      ToastUtils.showError(result.error ?? 'Capture failed');
-    }
-  }
-
-  Future<void> _recordVideo() async {
-    Navigator.pop(context);
-    setState(() => _isImporting = true);
-
-    final result = await _importService.recordVideoFromCamera();
-
-    setState(() => _isImporting = false);
-
-    if (result.success && result.importedCount > 0) {
-      ToastUtils.showSuccess('Video saved to vault');
-      await _loadFiles();
-    } else if (!result.success) {
-      ToastUtils.showError(result.error ?? 'Recording failed');
-    }
-  }
-
-  Future<void> _importDocuments() async {
-    Navigator.pop(context);
-    setState(() {
-      _isImporting = true;
-      _importProgress = 0;
-      _importTotal = 0;
-    });
-
-    final result = await _importService.importDocuments(
-      onProgress: (current, total) {
-        setState(() {
-          _importProgress = current;
-          _importTotal = total;
-        });
-      },
-    );
-
-    setState(() => _isImporting = false);
-
-    if (result.success && result.importedCount > 0) {
-      ToastUtils.showSuccess('Imported ${result.importedCount} document(s)');
-      await _loadFiles();
-    } else if (!result.success) {
-      ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No documents selected');
-    }
-  }
-
-  Future<void> _importAnyFiles() async {
-    Navigator.pop(context);
-    setState(() {
-      _isImporting = true;
-      _importProgress = 0;
-      _importTotal = 0;
-    });
-
-    final result = await _importService.importAnyFiles(
-      onProgress: (current, total) {
-        setState(() {
-          _importProgress = current;
-          _importTotal = total;
-        });
-      },
-    );
-
-    setState(() => _isImporting = false);
-
-    if (result.success && result.importedCount > 0) {
-      ToastUtils.showSuccess('Imported ${result.importedCount} file(s)');
-      await _loadFiles();
-    } else if (!result.success) {
-      ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No files selected');
-    }
-  }
-
-  void _toggleSelection(String fileId) {
-    setState(() {
-      if (_selectedFiles.contains(fileId)) {
-        _selectedFiles.remove(fileId);
-        if (_selectedFiles.isEmpty) {
-          _isSelectionMode = false;
-        }
-      } else {
-        _selectedFiles.add(fileId);
-      }
-    });
-  }
-
-  void _enterSelectionMode(String fileId) {
-    setState(() {
-      _isSelectionMode = true;
-      _selectedFiles.add(fileId);
-    });
-  }
-
-  void _exitSelectionMode() {
-    setState(() {
-      _isSelectionMode = false;
-      _selectedFiles.clear();
-    });
-  }
-
-  Future<void> _deleteSelectedFiles() async {
-    if (_selectedFiles.isEmpty) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.lightBackground,
-        title: Text(
-          'Delete Files',
-          style: TextStyle(
-            fontFamily: 'ProductSans',
-            color: AppColors.lightTextPrimary,
-          ),
-        ),
-        content: Text(
-          'Are you sure you want to delete ${_selectedFiles.length} file(s)? This action cannot be undone.',
-          style: TextStyle(
-            fontFamily: 'ProductSans',
-            color: AppColors.lightTextSecondary,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(
-                fontFamily: 'ProductSans',
-                color: AppColors.lightTextSecondary,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              'Delete',
-              style: TextStyle(
-                fontFamily: 'ProductSans',
-                color: AppColors.error,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      final deleted = await _vaultService.removeFiles(_selectedFiles.toList());
-      ToastUtils.showSuccess('Deleted $deleted file(s)');
-      _exitSelectionMode();
-      await _loadFiles();
-    }
+    await ref.read(vaultServiceProvider).initialize();
+    ref.read(vaultNotifierProvider.notifier).loadFiles();
   }
 
   @override
   Widget build(BuildContext context) {
+    final filesAsync = ref.watch(vaultNotifierProvider);
+    final isSelectionMode = ref.watch(isSelectionModeProvider);
+    final selectedFiles = ref.watch(selectedFilesProvider);
+
     return Scaffold(
       backgroundColor: AppColors.lightBackground,
-      appBar: _buildAppBar(),
+      appBar: _buildAppBar(isSelectionMode, selectedFiles),
       body: Column(
         children: [
           if (_isImporting) _buildImportProgress(),
-          _buildTabBar(),
+          if (_isSearching) _buildSearchBar(),
+          _buildTabBar(filesAsync),
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
-                _buildFileGrid(0),
-                _buildFileGrid(1),
-                _buildFileGrid(2),
-                _buildFileGrid(3),
+                _buildFileGrid(null, filesAsync),
+                _buildFileGrid(VaultedFileType.image, filesAsync),
+                _buildFileGrid(VaultedFileType.video, filesAsync),
+                _buildFileGrid(VaultedFileType.document, filesAsync),
               ],
             ),
           ),
         ],
       ),
-      floatingActionButton: _isSelectionMode ? null : _buildFAB(),
+      floatingActionButton: isSelectionMode ? null : _buildFAB(),
+      drawer: _buildDrawer(),
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
-    if (_isSelectionMode) {
+  PreferredSizeWidget _buildAppBar(
+      bool isSelectionMode, Set<String> selectedFiles) {
+    if (isSelectionMode) {
       return AppBar(
         backgroundColor: AppColors.accent,
         leading: IconButton(
@@ -389,7 +89,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
           onPressed: _exitSelectionMode,
         ),
         title: Text(
-          '${_selectedFiles.length} selected',
+          '${selectedFiles.length} selected',
           style: const TextStyle(
             fontFamily: 'ProductSans',
             color: Colors.white,
@@ -397,8 +97,23 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.folder_outlined, color: Colors.white),
+            onPressed: () => _showAddToAlbumSheet(selectedFiles),
+            tooltip: 'Add to album',
+          ),
+          IconButton(
+            icon: const Icon(Icons.favorite_outline, color: Colors.white),
+            onPressed: () => _toggleFavoriteSelected(selectedFiles),
+            tooltip: 'Toggle favorite',
+          ),
+          IconButton(
+            icon: const Icon(Icons.label_outline, color: Colors.white),
+            onPressed: () => _showAddTagsSheet(selectedFiles),
+            tooltip: 'Add tags',
+          ),
+          IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.white),
-            onPressed: _deleteSelectedFiles,
+            onPressed: () => _deleteSelectedFiles(selectedFiles),
           ),
         ],
       );
@@ -417,19 +132,110 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
       elevation: 0,
       actions: [
         IconButton(
-          icon: Icon(Icons.search, color: AppColors.lightTextPrimary),
+          icon: Icon(
+            _isSearching ? Icons.close : Icons.search,
+            color: AppColors.lightTextPrimary,
+          ),
           onPressed: () {
-            // TODO: Add search functionality
-            ToastUtils.showInfo('Search coming soon');
+            setState(() {
+              _isSearching = !_isSearching;
+              if (!_isSearching) {
+                _searchController.clear();
+                ref.read(searchQueryProvider.notifier).state = '';
+              }
+            });
           },
         ),
         IconButton(
+          icon: Icon(Icons.sort, color: AppColors.lightTextPrimary),
+          onPressed: _showSortOptions,
+        ),
+        PopupMenuButton<String>(
           icon: Icon(Icons.more_vert, color: AppColors.lightTextPrimary),
-          onPressed: () {
-            // TODO: Add settings menu
+          onSelected: (value) {
+            switch (value) {
+              case 'albums':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AlbumsScreen()),
+                );
+                break;
+              case 'settings':
+                _showSettingsSheet();
+                break;
+              case 'refresh':
+                ref.read(vaultNotifierProvider.notifier).refresh();
+                break;
+            }
           },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'albums',
+              child: Row(
+                children: [
+                  Icon(Icons.folder_outlined, size: 20),
+                  SizedBox(width: 12),
+                  Text('Albums'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'settings',
+              child: Row(
+                children: [
+                  Icon(Icons.settings_outlined, size: 20),
+                  SizedBox(width: 12),
+                  Text('Settings'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'refresh',
+              child: Row(
+                children: [
+                  Icon(Icons.refresh, size: 20),
+                  SizedBox(width: 12),
+                  Text('Refresh'),
+                ],
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: AppColors.lightBackgroundSecondary,
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Search files...',
+          hintStyle: TextStyle(
+            fontFamily: 'ProductSans',
+            color: AppColors.lightTextTertiary,
+          ),
+          prefixIcon:
+              Icon(Icons.search, color: AppColors.lightTextTertiary, size: 20),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: AppColors.lightBackground,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        style: TextStyle(
+          fontFamily: 'ProductSans',
+          color: AppColors.lightTextPrimary,
+        ),
+        onChanged: (value) {
+          ref.read(searchQueryProvider.notifier).state = value;
+        },
+      ),
     );
   }
 
@@ -465,15 +271,14 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
     );
   }
 
-  Widget _buildTabBar() {
+  Widget _buildTabBar(AsyncValue<List<VaultedFile>> filesAsync) {
+    final files = filesAsync.value ?? [];
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.lightBackground,
         border: Border(
-          bottom: BorderSide(
-            color: AppColors.lightDivider,
-            width: 1,
-          ),
+          bottom: BorderSide(color: AppColors.lightDivider, width: 1),
         ),
       ),
       child: TabBar(
@@ -482,6 +287,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
         unselectedLabelColor: AppColors.lightTextTertiary,
         indicatorColor: AppColors.accent,
         indicatorWeight: 3,
+        isScrollable: true,
         labelStyle: const TextStyle(
           fontFamily: 'ProductSans',
           fontWeight: FontWeight.w600,
@@ -499,7 +305,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
               children: [
                 const Icon(Icons.grid_view_rounded, size: 18),
                 const SizedBox(width: 6),
-                Text('All (${_allFiles.length})'),
+                Text('All (${files.length})'),
               ],
             ),
           ),
@@ -510,7 +316,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
                 const Icon(Icons.image_outlined, size: 18),
                 const SizedBox(width: 6),
                 Text(
-                    'Images (${_allFiles.where((f) => f.type == VaultedFileType.image).length})'),
+                    'Images (${files.where((f) => f.type == VaultedFileType.image).length})'),
               ],
             ),
           ),
@@ -521,7 +327,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
                 const Icon(Icons.videocam_outlined, size: 18),
                 const SizedBox(width: 6),
                 Text(
-                    'Videos (${_allFiles.where((f) => f.type == VaultedFileType.video).length})'),
+                    'Videos (${files.where((f) => f.type == VaultedFileType.video).length})'),
               ],
             ),
           ),
@@ -532,7 +338,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
                 const Icon(Icons.description_outlined, size: 18),
                 const SizedBox(width: 6),
                 Text(
-                    'Docs (${_allFiles.where((f) => f.type == VaultedFileType.document || f.type == VaultedFileType.other).length})'),
+                    'Docs (${files.where((f) => f.type == VaultedFileType.document || f.type == VaultedFileType.other).length})'),
               ],
             ),
           ),
@@ -541,54 +347,106 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
     );
   }
 
-  Widget _buildFileGrid(int tabIndex) {
-    if (_isLoading) {
-      return Center(
+  Widget _buildFileGrid(
+      VaultedFileType? filterType, AsyncValue<List<VaultedFile>> filesAsync) {
+    return filesAsync.when(
+      loading: () => Center(
         child: CircularProgressIndicator(
           valueColor: AlwaysStoppedAnimation(AppColors.accent),
         ),
-      );
-    }
-
-    final files = _getFilteredFiles(tabIndex);
-
-    if (files.isEmpty) {
-      return _buildEmptyState(tabIndex);
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadFiles,
-      color: AppColors.accent,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          crossAxisSpacing: 4,
-          mainAxisSpacing: 4,
-          childAspectRatio: 1,
-        ),
-        itemCount: files.length,
-        itemBuilder: (context, index) {
-          final file = files[index];
-          return _buildFileItem(file);
-        },
       ),
+      error: (error, stack) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline,
+                size: 64, color: AppColors.lightTextTertiary),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load files',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                color: AppColors.lightTextSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () =>
+                  ref.read(vaultNotifierProvider.notifier).loadFiles(),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+      data: (allFiles) {
+        // Filter by type
+        List<VaultedFile> files;
+        if (filterType == null) {
+          files = allFiles;
+        } else if (filterType == VaultedFileType.document) {
+          files = allFiles
+              .where((f) =>
+                  f.type == VaultedFileType.document ||
+                  f.type == VaultedFileType.other)
+              .toList();
+        } else {
+          files = allFiles.where((f) => f.type == filterType).toList();
+        }
+
+        // Apply search filter
+        final searchQuery = ref.watch(searchQueryProvider);
+        if (searchQuery.isNotEmpty) {
+          files = files
+              .where((f) => f.originalName
+                  .toLowerCase()
+                  .contains(searchQuery.toLowerCase()))
+              .toList();
+        }
+
+        // Apply sorting
+        final sortOption = ref.watch(sortOptionProvider);
+        files = ref.read(vaultServiceProvider).sortFiles(files, sortOption);
+
+        if (files.isEmpty) {
+          return _buildEmptyState(filterType);
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            await ref.read(vaultNotifierProvider.notifier).refresh();
+          },
+          color: AppColors.accent,
+          child: GridView.builder(
+            padding: const EdgeInsets.all(8),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 4,
+              mainAxisSpacing: 4,
+              childAspectRatio: 1,
+            ),
+            itemCount: files.length,
+            itemBuilder: (context, index) => _buildFileItem(files[index]),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildFileItem(VaultedFile file) {
-    final isSelected = _selectedFiles.contains(file.id);
+    final selectedFiles = ref.watch(selectedFilesProvider);
+    final isSelectionMode = ref.watch(isSelectionModeProvider);
+    final isSelected = selectedFiles.contains(file.id);
 
     return GestureDetector(
       onTap: () {
-        if (_isSelectionMode) {
+        if (isSelectionMode) {
           _toggleSelection(file.id);
         } else {
           _openFile(file);
         }
       },
       onLongPress: () {
-        if (!_isSelectionMode) {
+        if (!isSelectionMode) {
           _enterSelectionMode(file.id);
         }
       },
@@ -609,7 +467,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
             ),
           ),
           // Selection indicator
-          if (_isSelectionMode)
+          if (isSelectionMode)
             Positioned(
               top: 8,
               right: 8,
@@ -628,6 +486,70 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
                 child: isSelected
                     ? const Icon(Icons.check, size: 16, color: Colors.white)
                     : null,
+              ),
+            ),
+          // Favorite indicator
+          if (file.isFavorite && !isSelectionMode)
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(
+                  Icons.favorite,
+                  size: 14,
+                  color: Colors.red,
+                ),
+              ),
+            ),
+          // Encrypted indicator
+          if (file.isEncrypted && !isSelectionMode)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(
+                  Icons.lock,
+                  size: 14,
+                  color: Colors.green,
+                ),
+              ),
+            ),
+          // Tags indicator
+          if (file.hasTags && !isSelectionMode)
+            Positioned(
+              bottom: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.label, size: 12, color: Colors.white),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${file.tagCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontFamily: 'ProductSans',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           // Video duration indicator
@@ -688,13 +610,11 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
   }
 
   Widget _buildFileThumbnail(VaultedFile file) {
-    if (file.isImage) {
+    if (file.isImage && !file.isEncrypted) {
       return Image.file(
         File(file.vaultPath),
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildPlaceholder(file);
-        },
+        errorBuilder: (context, error, stackTrace) => _buildPlaceholder(file),
       );
     }
     return _buildPlaceholder(file);
@@ -704,23 +624,28 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
     IconData icon;
     Color color;
 
-    switch (file.type) {
-      case VaultedFileType.image:
-        icon = Icons.image;
-        color = Colors.blue;
-        break;
-      case VaultedFileType.video:
-        icon = Icons.videocam;
-        color = Colors.red;
-        break;
-      case VaultedFileType.document:
-        icon = _getDocumentIcon(file.extension);
-        color = _getDocumentColor(file.extension);
-        break;
-      case VaultedFileType.other:
-        icon = Icons.insert_drive_file;
-        color = Colors.grey;
-        break;
+    if (file.isEncrypted) {
+      icon = Icons.lock;
+      color = Colors.green;
+    } else {
+      switch (file.type) {
+        case VaultedFileType.image:
+          icon = Icons.image;
+          color = Colors.blue;
+          break;
+        case VaultedFileType.video:
+          icon = Icons.videocam;
+          color = Colors.red;
+          break;
+        case VaultedFileType.document:
+          icon = _getDocumentIcon(file.extension);
+          color = _getDocumentColor(file.extension);
+          break;
+        case VaultedFileType.other:
+          icon = Icons.insert_drive_file;
+          color = Colors.grey;
+          break;
+      }
     }
 
     return Container(
@@ -733,7 +658,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              file.extension.toUpperCase(),
+              file.isEncrypted ? 'ENCRYPTED' : file.extension.toUpperCase(),
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
@@ -787,41 +712,66 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
     }
   }
 
+  void _toggleSelection(String fileId) {
+    final selectedFiles = ref.read(selectedFilesProvider);
+    if (selectedFiles.contains(fileId)) {
+      ref.read(selectedFilesProvider.notifier).state = Set.from(selectedFiles)
+        ..remove(fileId);
+      if (selectedFiles.length == 1) {
+        ref.read(isSelectionModeProvider.notifier).state = false;
+      }
+    } else {
+      ref.read(selectedFilesProvider.notifier).state = Set.from(selectedFiles)
+        ..add(fileId);
+    }
+  }
+
+  void _enterSelectionMode(String fileId) {
+    ref.read(isSelectionModeProvider.notifier).state = true;
+    ref.read(selectedFilesProvider.notifier).state = {fileId};
+  }
+
+  void _exitSelectionMode() {
+    ref.read(isSelectionModeProvider.notifier).state = false;
+    ref.read(selectedFilesProvider.notifier).state = {};
+  }
+
   void _openFile(VaultedFile file) {
-    // TODO: Implement file viewer
     ToastUtils.showInfo('Opening ${file.originalName}');
   }
 
-  Widget _buildEmptyState(int tabIndex) {
+  Widget _buildEmptyState(VaultedFileType? filterType) {
     String title;
     String subtitle;
     IconData icon;
 
-    switch (tabIndex) {
-      case 0:
-        title = 'No files yet';
-        subtitle = 'Your hidden files will appear here';
-        icon = Icons.folder_open_outlined;
-        break;
-      case 1:
-        title = 'No images yet';
-        subtitle = 'Import images from gallery or camera';
-        icon = Icons.image_outlined;
-        break;
-      case 2:
-        title = 'No videos yet';
-        subtitle = 'Import videos from gallery or camera';
-        icon = Icons.videocam_outlined;
-        break;
-      case 3:
-        title = 'No documents yet';
-        subtitle = 'Import PDFs, Word docs, and more';
-        icon = Icons.description_outlined;
-        break;
-      default:
-        title = 'No files yet';
-        subtitle = 'Tap + to add files';
-        icon = Icons.folder_open_outlined;
+    if (filterType == null) {
+      title = 'No files yet';
+      subtitle = 'Your hidden files will appear here';
+      icon = Icons.folder_open_outlined;
+    } else {
+      switch (filterType) {
+        case VaultedFileType.image:
+          title = 'No images yet';
+          subtitle = 'Import images from gallery or camera';
+          icon = Icons.image_outlined;
+          break;
+        case VaultedFileType.video:
+          title = 'No videos yet';
+          subtitle = 'Import videos from gallery or camera';
+          icon = Icons.videocam_outlined;
+          break;
+        case VaultedFileType.document:
+          title = 'No documents yet';
+          subtitle = 'Import PDFs, Word docs, and more';
+          icon = Icons.description_outlined;
+          break;
+        case VaultedFileType.other:
+          title = 'No other files yet';
+          subtitle = 'Import any files';
+          icon = Icons.folder_open_outlined;
+          break;
+      }
     }
 
     return Center(
@@ -835,11 +785,7 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
               color: AppColors.lightBackgroundSecondary,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              size: 64,
-              color: AppColors.lightTextTertiary,
-            ),
+            child: Icon(icon, size: 64, color: AppColors.lightTextTertiary),
           ),
           const SizedBox(height: 24),
           Text(
@@ -895,6 +841,1089 @@ class _GalleryVaultScreenState extends State<GalleryVaultScreen>
       ),
     );
   }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: AppColors.lightBackground,
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: AppColors.accent,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const Icon(Icons.lock, size: 48, color: Colors.white),
+                const SizedBox(height: 12),
+                const Text(
+                  'Locker',
+                  style: TextStyle(
+                    fontFamily: 'ProductSans',
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final storageAsync = ref.watch(formattedStorageProvider);
+                    final countAsync = ref.watch(fileCountSummaryProvider);
+
+                    return Text(
+                      '${countAsync.value ?? '...'} • ${storageAsync.value ?? '...'}',
+                      style: TextStyle(
+                        fontFamily: 'ProductSans',
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 14,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: const Text(
+              'Albums',
+              style: TextStyle(fontFamily: 'ProductSans'),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AlbumsScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.favorite_outline),
+            title: const Text(
+              'Favorites',
+              style: TextStyle(fontFamily: 'ProductSans'),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              ToastUtils.showInfo('Favorites coming soon');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.label_outline),
+            title: const Text(
+              'Tags',
+              style: TextStyle(fontFamily: 'ProductSans'),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _showTagsSheet();
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.security),
+            title: const Text(
+              'Security Settings',
+              style: TextStyle(fontFamily: 'ProductSans'),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _showSettingsSheet();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.shield_outlined),
+            title: const Text(
+              'Decoy Mode',
+              style: TextStyle(fontFamily: 'ProductSans'),
+            ),
+            subtitle: const Text(
+              'Set up fake vault',
+              style: TextStyle(fontFamily: 'ProductSans', fontSize: 12),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _showDecoyModeSheet();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showImportDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _ImportOptionsSheet(
+        onImportImages: _importImagesFromGallery,
+        onImportVideos: _importVideosFromGallery,
+        onImportMedia: _importMediaFromGallery,
+        onCapturePhoto: _capturePhoto,
+        onRecordVideo: _recordVideo,
+        onImportDocuments: _importDocuments,
+        onImportAnyFiles: _importAnyFiles,
+      ),
+    );
+  }
+
+  void _showSortOptions() {
+    final currentSort = ref.read(sortOptionProvider);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.lightBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.lightBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Sort By',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.lightTextPrimary,
+                      fontFamily: 'ProductSans',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...SortOption.values.map((option) => ListTile(
+                        leading: Icon(
+                          currentSort == option
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          color: currentSort == option
+                              ? AppColors.accent
+                              : AppColors.lightTextTertiary,
+                        ),
+                        title: Text(
+                          option.displayName,
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            color: AppColors.lightTextPrimary,
+                          ),
+                        ),
+                        onTap: () {
+                          ref.read(sortOptionProvider.notifier).state = option;
+                          Navigator.pop(context);
+                        },
+                        contentPadding: EdgeInsets.zero,
+                      )),
+                ],
+              ),
+            ),
+            SizedBox(height: MediaQuery.of(context).padding.bottom),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddToAlbumSheet(Set<String> selectedFiles) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final albumsAsync = ref.watch(albumsNotifierProvider);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.lightBackground,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Add to Album',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.lightTextPrimary,
+                          fontFamily: 'ProductSans',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      albumsAsync.when(
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (_, __) => const Text('Failed to load albums'),
+                        data: (albums) => Column(
+                          children: albums
+                              .where((a) =>
+                                  !a.isDefault || a.type == AlbumType.favorites)
+                              .map((album) => ListTile(
+                                    leading: Icon(
+                                      Icons.folder_outlined,
+                                      color: AppColors.accent,
+                                    ),
+                                    title: Text(
+                                      album.name,
+                                      style: const TextStyle(
+                                        fontFamily: 'ProductSans',
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '${album.fileCount} items',
+                                      style: TextStyle(
+                                        fontFamily: 'ProductSans',
+                                        fontSize: 12,
+                                        color: AppColors.lightTextTertiary,
+                                      ),
+                                    ),
+                                    onTap: () async {
+                                      Navigator.pop(context);
+                                      final success = await ref
+                                          .read(vaultNotifierProvider.notifier)
+                                          .addToAlbum(
+                                            selectedFiles.toList(),
+                                            album.id,
+                                          );
+                                      if (success) {
+                                        ToastUtils.showSuccess(
+                                            'Added to ${album.name}');
+                                        _exitSelectionMode();
+                                      } else {
+                                        ToastUtils.showError(
+                                            'Failed to add to album');
+                                      }
+                                    },
+                                    contentPadding: EdgeInsets.zero,
+                                  ))
+                              .toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: MediaQuery.of(context).padding.bottom),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showAddTagsSheet(Set<String> selectedFiles) {
+    final tagController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.lightBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.lightBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add Tags',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.lightTextPrimary,
+                        fontFamily: 'ProductSans',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: tagController,
+                      decoration: InputDecoration(
+                        hintText: 'Enter tag name',
+                        hintStyle: TextStyle(
+                          fontFamily: 'ProductSans',
+                          color: AppColors.lightTextTertiary,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: AppColors.accent),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(Icons.add, color: AppColors.accent),
+                          onPressed: () async {
+                            final tag = tagController.text.trim();
+                            if (tag.isEmpty) return;
+
+                            for (final fileId in selectedFiles) {
+                              await ref
+                                  .read(vaultNotifierProvider.notifier)
+                                  .addTag(fileId, tag);
+                            }
+
+                            if (!context.mounted) return;
+                            Navigator.pop(context);
+                            ToastUtils.showSuccess('Tag added');
+                            _exitSelectionMode();
+                          },
+                        ),
+                      ),
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Quick Tags',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.lightTextTertiary,
+                        fontFamily: 'ProductSans',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: predefinedTags
+                          .map((tag) => ActionChip(
+                                label: Text(
+                                  tag,
+                                  style: const TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  for (final fileId in selectedFiles) {
+                                    await ref
+                                        .read(vaultNotifierProvider.notifier)
+                                        .addTag(fileId, tag);
+                                  }
+
+                                  if (!context.mounted) return;
+                                  Navigator.pop(context);
+                                  ToastUtils.showSuccess('Tag added');
+                                  _exitSelectionMode();
+                                },
+                              ))
+                          .toList(),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: MediaQuery.of(context).padding.bottom),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleFavoriteSelected(Set<String> selectedFiles) async {
+    for (final fileId in selectedFiles) {
+      await ref.read(vaultNotifierProvider.notifier).toggleFavorite(fileId);
+    }
+    ToastUtils.showSuccess('Favorites updated');
+    _exitSelectionMode();
+  }
+
+  Future<void> _deleteSelectedFiles(Set<String> selectedFiles) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.lightBackground,
+        title: Text(
+          'Delete Files',
+          style: TextStyle(
+            fontFamily: 'ProductSans',
+            color: AppColors.lightTextPrimary,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete ${selectedFiles.length} file(s)? This action cannot be undone.',
+          style: TextStyle(
+            fontFamily: 'ProductSans',
+            color: AppColors.lightTextSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                color: AppColors.lightTextSecondary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Delete',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                color: AppColors.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final success = await ref
+          .read(vaultNotifierProvider.notifier)
+          .deleteFiles(selectedFiles.toList());
+      if (success) {
+        ToastUtils.showSuccess('Files deleted');
+      } else {
+        ToastUtils.showError('Failed to delete some files');
+      }
+    }
+  }
+
+  void _showTagsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final tagsAsync = ref.watch(tagsProvider);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.lightBackground,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Tags',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.lightTextPrimary,
+                          fontFamily: 'ProductSans',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      tagsAsync.when(
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (_, __) => const Text('Failed to load tags'),
+                        data: (tags) => tags.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No tags yet',
+                                  style: TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    color: AppColors.lightTextTertiary,
+                                  ),
+                                ),
+                              )
+                            : Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: tags
+                                    .map((tag) => Chip(
+                                          label: Text(
+                                            '${tag.name} (${tag.usageCount})',
+                                            style: const TextStyle(
+                                              fontFamily: 'ProductSans',
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ))
+                                    .toList(),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: MediaQuery.of(context).padding.bottom),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showSettingsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final settingsAsync = ref.watch(vaultSettingsProvider);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.lightBackground,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Security Settings',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.lightTextPrimary,
+                          fontFamily: 'ProductSans',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      settingsAsync.when(
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (_, __) => const Text('Failed to load settings'),
+                        data: (settings) => Column(
+                          children: [
+                            SwitchListTile(
+                              title: const Text(
+                                'Encrypt New Files',
+                                style: TextStyle(fontFamily: 'ProductSans'),
+                              ),
+                              subtitle: Text(
+                                'AES-256 encryption for all new imports',
+                                style: TextStyle(
+                                  fontFamily: 'ProductSans',
+                                  fontSize: 12,
+                                  color: AppColors.lightTextTertiary,
+                                ),
+                              ),
+                              value: settings.encryptionEnabled,
+                              onChanged: (value) async {
+                                await ref
+                                    .read(vaultServiceProvider)
+                                    .updateSettings(settings.copyWith(
+                                      encryptionEnabled: value,
+                                    ));
+                                ref.invalidate(vaultSettingsProvider);
+                              },
+                              activeThumbColor: AppColors.accent,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            SwitchListTile(
+                              title: const Text(
+                                'Secure Delete',
+                                style: TextStyle(fontFamily: 'ProductSans'),
+                              ),
+                              subtitle: Text(
+                                'Overwrite files before deletion',
+                                style: TextStyle(
+                                  fontFamily: 'ProductSans',
+                                  fontSize: 12,
+                                  color: AppColors.lightTextTertiary,
+                                ),
+                              ),
+                              value: settings.secureDelete,
+                              onChanged: (value) async {
+                                await ref
+                                    .read(vaultServiceProvider)
+                                    .updateSettings(settings.copyWith(
+                                      secureDelete: value,
+                                    ));
+                                ref.invalidate(vaultSettingsProvider);
+                              },
+                              activeThumbColor: AppColors.accent,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: MediaQuery.of(context).padding.bottom),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showDecoyModeSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final decoySettingsAsync = ref.watch(decoySettingsProvider);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.lightBackground,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.shield_outlined, color: AppColors.accent),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Decoy Mode',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.lightTextPrimary,
+                              fontFamily: 'ProductSans',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Set up a fake vault that shows when using a different PIN/password. Perfect for situations where you might be forced to open the app.',
+                        style: TextStyle(
+                          fontFamily: 'ProductSans',
+                          color: AppColors.lightTextSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      decoySettingsAsync.when(
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (_, __) => const Text('Failed to load settings'),
+                        data: (settings) => Column(
+                          children: [
+                            SwitchListTile(
+                              title: const Text(
+                                'Enable Decoy Mode',
+                                style: TextStyle(fontFamily: 'ProductSans'),
+                              ),
+                              value: settings.isEnabled,
+                              onChanged: (value) async {
+                                final decoyService =
+                                    ref.read(decoyServiceProvider);
+                                if (value) {
+                                  await decoyService.enableDecoyMode();
+                                } else {
+                                  await decoyService.disableDecoyMode();
+                                }
+                                ref.invalidate(decoySettingsProvider);
+                              },
+                              activeThumbColor: AppColors.accent,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            if (settings.isEnabled) ...[
+                              ListTile(
+                                leading: Icon(
+                                  settings.hasPinSet
+                                      ? Icons.check_circle
+                                      : Icons.radio_button_off,
+                                  color: settings.hasPinSet
+                                      ? Colors.green
+                                      : AppColors.lightTextTertiary,
+                                ),
+                                title: const Text(
+                                  'Set Decoy PIN',
+                                  style: TextStyle(fontFamily: 'ProductSans'),
+                                ),
+                                subtitle: Text(
+                                  settings.hasPinSet
+                                      ? 'Decoy PIN is set'
+                                      : 'Not configured',
+                                  style: TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    fontSize: 12,
+                                    color: AppColors.lightTextTertiary,
+                                  ),
+                                ),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  _showSetDecoyPinDialog();
+                                },
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: MediaQuery.of(context).padding.bottom),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showSetDecoyPinDialog() {
+    final pinController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.lightBackground,
+        title: Text(
+          'Set Decoy PIN',
+          style: TextStyle(
+            fontFamily: 'ProductSans',
+            color: AppColors.lightTextPrimary,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'This PIN will show your decoy vault instead of your real files.',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                color: AppColors.lightTextSecondary,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'Decoy PIN (4-6 digits)',
+                labelStyle: TextStyle(
+                  fontFamily: 'ProductSans',
+                  color: AppColors.lightTextSecondary,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.accent),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                color: AppColors.lightTextSecondary,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final pin = pinController.text.trim();
+              if (pin.length < 4) {
+                ToastUtils.showError('PIN must be at least 4 digits');
+                return;
+              }
+
+              final success =
+                  await ref.read(decoyServiceProvider).setDecoyPin(pin);
+              if (!context.mounted) return;
+              if (success) {
+                Navigator.pop(context);
+                ref.invalidate(decoySettingsProvider);
+                ToastUtils.showSuccess('Decoy PIN set');
+              } else {
+                ToastUtils.showError('Failed to set decoy PIN');
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text(
+              'Set PIN',
+              style: TextStyle(fontFamily: 'ProductSans'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Import methods
+  Future<void> _importImagesFromGallery() async {
+    Navigator.pop(context);
+    setState(() {
+      _isImporting = true;
+      _importProgress = 0;
+      _importTotal = 0;
+    });
+
+    final result = await _importService.importImagesFromGallery(
+      onProgress: (current, total) {
+        setState(() {
+          _importProgress = current;
+          _importTotal = total;
+        });
+      },
+    );
+
+    setState(() => _isImporting = false);
+
+    if (result.success && result.importedCount > 0) {
+      ToastUtils.showSuccess('Imported ${result.importedCount} image(s)');
+      ref.read(vaultNotifierProvider.notifier).loadFiles();
+    } else if (!result.success) {
+      ToastUtils.showError(result.error ?? 'Import failed');
+    } else {
+      ToastUtils.showInfo('No images selected');
+    }
+  }
+
+  Future<void> _importVideosFromGallery() async {
+    Navigator.pop(context);
+    setState(() {
+      _isImporting = true;
+      _importProgress = 0;
+      _importTotal = 0;
+    });
+
+    final result = await _importService.importVideosFromGallery(
+      onProgress: (current, total) {
+        setState(() {
+          _importProgress = current;
+          _importTotal = total;
+        });
+      },
+    );
+
+    setState(() => _isImporting = false);
+
+    if (result.success && result.importedCount > 0) {
+      ToastUtils.showSuccess('Imported ${result.importedCount} video(s)');
+      ref.read(vaultNotifierProvider.notifier).loadFiles();
+    } else if (!result.success) {
+      ToastUtils.showError(result.error ?? 'Import failed');
+    } else {
+      ToastUtils.showInfo('No videos selected');
+    }
+  }
+
+  Future<void> _importMediaFromGallery() async {
+    Navigator.pop(context);
+    setState(() {
+      _isImporting = true;
+      _importProgress = 0;
+      _importTotal = 0;
+    });
+
+    final result = await _importService.importMediaFromGallery(
+      onProgress: (current, total) {
+        setState(() {
+          _importProgress = current;
+          _importTotal = total;
+        });
+      },
+    );
+
+    setState(() => _isImporting = false);
+
+    if (result.success && result.importedCount > 0) {
+      ToastUtils.showSuccess('Imported ${result.importedCount} file(s)');
+      ref.read(vaultNotifierProvider.notifier).loadFiles();
+    } else if (!result.success) {
+      ToastUtils.showError(result.error ?? 'Import failed');
+    } else {
+      ToastUtils.showInfo('No media selected');
+    }
+  }
+
+  Future<void> _capturePhoto() async {
+    Navigator.pop(context);
+    setState(() => _isImporting = true);
+
+    final result = await _importService.capturePhotoFromCamera();
+
+    setState(() => _isImporting = false);
+
+    if (result.success && result.importedCount > 0) {
+      ToastUtils.showSuccess('Photo saved to vault');
+      ref.read(vaultNotifierProvider.notifier).loadFiles();
+    } else if (!result.success) {
+      ToastUtils.showError(result.error ?? 'Capture failed');
+    }
+  }
+
+  Future<void> _recordVideo() async {
+    Navigator.pop(context);
+    setState(() => _isImporting = true);
+
+    final result = await _importService.recordVideoFromCamera();
+
+    setState(() => _isImporting = false);
+
+    if (result.success && result.importedCount > 0) {
+      ToastUtils.showSuccess('Video saved to vault');
+      ref.read(vaultNotifierProvider.notifier).loadFiles();
+    } else if (!result.success) {
+      ToastUtils.showError(result.error ?? 'Recording failed');
+    }
+  }
+
+  Future<void> _importDocuments() async {
+    Navigator.pop(context);
+    setState(() {
+      _isImporting = true;
+      _importProgress = 0;
+      _importTotal = 0;
+    });
+
+    final result = await _importService.importDocuments(
+      onProgress: (current, total) {
+        setState(() {
+          _importProgress = current;
+          _importTotal = total;
+        });
+      },
+    );
+
+    setState(() => _isImporting = false);
+
+    if (result.success && result.importedCount > 0) {
+      ToastUtils.showSuccess('Imported ${result.importedCount} document(s)');
+      ref.read(vaultNotifierProvider.notifier).loadFiles();
+    } else if (!result.success) {
+      ToastUtils.showError(result.error ?? 'Import failed');
+    } else {
+      ToastUtils.showInfo('No documents selected');
+    }
+  }
+
+  Future<void> _importAnyFiles() async {
+    Navigator.pop(context);
+    setState(() {
+      _isImporting = true;
+      _importProgress = 0;
+      _importTotal = 0;
+    });
+
+    final result = await _importService.importAnyFiles(
+      onProgress: (current, total) {
+        setState(() {
+          _importProgress = current;
+          _importTotal = total;
+        });
+      },
+    );
+
+    setState(() => _isImporting = false);
+
+    if (result.success && result.importedCount > 0) {
+      ToastUtils.showSuccess('Imported ${result.importedCount} file(s)');
+      ref.read(vaultNotifierProvider.notifier).loadFiles();
+    } else if (!result.success) {
+      ToastUtils.showError(result.error ?? 'Import failed');
+    } else {
+      ToastUtils.showInfo('No files selected');
+    }
+  }
 }
 
 /// Import options bottom sheet
@@ -927,7 +1956,6 @@ class _ImportOptionsSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar
           Container(
             margin: const EdgeInsets.only(top: 12),
             width: 40,
@@ -953,7 +1981,7 @@ class _ImportOptionsSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Choose where to import from',
+                  'Files will be encrypted and hidden securely',
                   style: TextStyle(
                     fontSize: 14,
                     color: AppColors.lightTextSecondary,
@@ -961,8 +1989,6 @@ class _ImportOptionsSheet extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // Gallery section
                 _buildSectionHeader('From Gallery'),
                 const SizedBox(height: 12),
                 Row(
@@ -995,10 +2021,7 @@ class _ImportOptionsSheet extends StatelessWidget {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 24),
-
-                // Camera section
                 _buildSectionHeader('From Camera'),
                 const SizedBox(height: 12),
                 Row(
@@ -1021,13 +2044,10 @@ class _ImportOptionsSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(child: SizedBox()), // Placeholder
+                    const Expanded(child: SizedBox()),
                   ],
                 ),
-
                 const SizedBox(height: 24),
-
-                // Documents section
                 _buildSectionHeader('From File Manager'),
                 const SizedBox(height: 12),
                 Row(
@@ -1050,10 +2070,9 @@ class _ImportOptionsSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(child: SizedBox()), // Placeholder
+                    const Expanded(child: SizedBox()),
                   ],
                 ),
-
                 const SizedBox(height: 24),
               ],
             ),
