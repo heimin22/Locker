@@ -44,6 +44,21 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
         ),
         data: (files) => _buildFilesGrid(files),
       ),
+      floatingActionButton: _isSelectionMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _showAddFilesSheet,
+              backgroundColor: AppColors.accent,
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text(
+                'Add Files',
+                style: TextStyle(
+                  fontFamily: 'ProductSans',
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
     );
   }
 
@@ -633,6 +648,348 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
   }
 
   void _showAddFilesSheet() {
-    ToastUtils.showInfo('Add files from gallery vault');
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _AddFilesToAlbumSheet(
+        albumId: widget.albumId,
+        onFilesAdded: () {
+          ref.invalidate(filesInAlbumProvider(widget.albumId));
+          ref.invalidate(albumProvider(widget.albumId));
+          ref.invalidate(albumsNotifierProvider);
+        },
+      ),
+    );
+  }
+}
+
+/// Bottom sheet for adding files to album from vault
+class _AddFilesToAlbumSheet extends ConsumerStatefulWidget {
+  final String albumId;
+  final VoidCallback onFilesAdded;
+
+  const _AddFilesToAlbumSheet({
+    required this.albumId,
+    required this.onFilesAdded,
+  });
+
+  @override
+  ConsumerState<_AddFilesToAlbumSheet> createState() =>
+      _AddFilesToAlbumSheetState();
+}
+
+class _AddFilesToAlbumSheetState extends ConsumerState<_AddFilesToAlbumSheet> {
+  final Set<String> _selectedFiles = {};
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final vaultFilesAsync = ref.watch(vaultNotifierProvider);
+    final albumFilesAsync = ref.watch(filesInAlbumProvider(widget.albumId));
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      decoration: BoxDecoration(
+        color: AppColors.lightBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          // Handle
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.lightBorder,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Add Files to Album',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.lightTextPrimary,
+                          fontFamily: 'ProductSans',
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Select files from your vault',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.lightTextSecondary,
+                          fontFamily: 'ProductSans',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_selectedFiles.isNotEmpty)
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _addSelectedFiles,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            'Add (${_selectedFiles.length})',
+                            style: const TextStyle(fontFamily: 'ProductSans'),
+                          ),
+                  ),
+              ],
+            ),
+          ),
+          // File grid
+          Expanded(
+            child: vaultFilesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => Center(
+                child: Text(
+                  'Failed to load files',
+                  style: TextStyle(
+                    fontFamily: 'ProductSans',
+                    color: AppColors.lightTextSecondary,
+                  ),
+                ),
+              ),
+              data: (allFiles) {
+                // Get files already in album
+                final albumFileIds =
+                    albumFilesAsync.value?.map((f) => f.id).toSet() ?? {};
+
+                // Filter out files already in album
+                final availableFiles = allFiles
+                    .where((f) => !albumFileIds.contains(f.id))
+                    .toList();
+
+                if (availableFiles.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          size: 64,
+                          color: AppColors.lightTextTertiary,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'All files are already in this album',
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            color: AppColors.lightTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return GridView.builder(
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 1,
+                  ),
+                  itemCount: availableFiles.length,
+                  itemBuilder: (context, index) =>
+                      _buildFileItem(availableFiles[index]),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFileItem(VaultedFile file) {
+    final isSelected = _selectedFiles.contains(file.id);
+
+    return GestureDetector(
+      onTap: () => _toggleSelection(file.id),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.lightBackgroundSecondary,
+              borderRadius: BorderRadius.circular(8),
+              border: isSelected
+                  ? Border.all(color: AppColors.accent, width: 3)
+                  : null,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(isSelected ? 5 : 8),
+              child: _buildFileThumbnail(file),
+            ),
+          ),
+          // Selection indicator
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? AppColors.accent : Colors.white,
+                border: Border.all(
+                  color: isSelected ? AppColors.accent : AppColors.lightBorder,
+                  width: 2,
+                ),
+              ),
+              child: isSelected
+                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  : null,
+            ),
+          ),
+          // Video indicator
+          if (file.isVideo)
+            Positioned(
+              bottom: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child:
+                    const Icon(Icons.play_arrow, size: 16, color: Colors.white),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFileThumbnail(VaultedFile file) {
+    if (file.isImage) {
+      return Image.file(
+        File(file.vaultPath),
+        fit: BoxFit.cover,
+        cacheWidth: 200,
+        errorBuilder: (_, __, ___) => _buildPlaceholder(file),
+      );
+    }
+
+    if (file.isVideo) {
+      return Container(
+        color: Colors.black87,
+        child: const Center(
+          child: Icon(
+            Icons.play_circle_outline,
+            size: 32,
+            color: Colors.white70,
+          ),
+        ),
+      );
+    }
+
+    return _buildPlaceholder(file);
+  }
+
+  Widget _buildPlaceholder(VaultedFile file) {
+    IconData icon;
+    Color color;
+
+    switch (file.type) {
+      case VaultedFileType.image:
+        icon = Icons.image;
+        color = Colors.blue;
+        break;
+      case VaultedFileType.video:
+        icon = Icons.videocam;
+        color = Colors.red;
+        break;
+      case VaultedFileType.document:
+        icon = Icons.description;
+        color = Colors.orange;
+        break;
+      case VaultedFileType.other:
+        icon = Icons.insert_drive_file;
+        color = Colors.grey;
+        break;
+    }
+
+    return Container(
+      color: color.withValues(alpha: 0.1),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 28, color: color),
+          const SizedBox(height: 4),
+          Text(
+            file.extension.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: color,
+              fontFamily: 'ProductSans',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleSelection(String fileId) {
+    setState(() {
+      if (_selectedFiles.contains(fileId)) {
+        _selectedFiles.remove(fileId);
+      } else {
+        _selectedFiles.add(fileId);
+      }
+    });
+  }
+
+  Future<void> _addSelectedFiles() async {
+    if (_selectedFiles.isEmpty) return;
+
+    setState(() => _isLoading = true);
+
+    final success = await ref.read(vaultNotifierProvider.notifier).addToAlbum(
+          _selectedFiles.toList(),
+          widget.albumId,
+        );
+
+    setState(() => _isLoading = false);
+
+    if (success) {
+      widget.onFilesAdded();
+      if (mounted) {
+        Navigator.pop(context);
+        ToastUtils.showSuccess('Added ${_selectedFiles.length} files to album');
+      }
+    } else {
+      ToastUtils.showError('Failed to add files to album');
+    }
   }
 }

@@ -473,8 +473,7 @@ class _AlbumsScreenState extends ConsumerState<AlbumsScreen> {
                     label: 'Change Cover',
                     onTap: () {
                       Navigator.pop(context);
-                      // TODO: Implement change cover
-                      ToastUtils.showInfo('Coming soon');
+                      _showChangeCoverSheet(album);
                     },
                   ),
                   _buildOptionTile(
@@ -755,5 +754,340 @@ class _AlbumsScreenState extends ConsumerState<AlbumsScreen> {
         ],
       ),
     );
+  }
+
+  void _showChangeCoverSheet(Album album) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _ChangeCoverSheet(
+        album: album,
+        onCoverChanged: () {
+          ref.invalidate(albumsNotifierProvider);
+        },
+      ),
+    );
+  }
+}
+
+/// Bottom sheet for changing album cover
+class _ChangeCoverSheet extends ConsumerStatefulWidget {
+  final Album album;
+  final VoidCallback onCoverChanged;
+
+  const _ChangeCoverSheet({
+    required this.album,
+    required this.onCoverChanged,
+  });
+
+  @override
+  ConsumerState<_ChangeCoverSheet> createState() => _ChangeCoverSheetState();
+}
+
+class _ChangeCoverSheetState extends ConsumerState<_ChangeCoverSheet> {
+  bool _isLoading = false;
+  String? _selectedFileId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFileId = widget.album.coverImageId;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vaultFilesAsync = ref.watch(vaultNotifierProvider);
+    final albumFilesAsync = ref.watch(filesInAlbumProvider(widget.album.id));
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: AppColors.lightBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          // Handle
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.lightBorder,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Choose Album Cover',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.lightTextPrimary,
+                      fontFamily: 'ProductSans',
+                    ),
+                  ),
+                ),
+                if (_selectedFileId != null &&
+                    _selectedFileId != widget.album.coverImageId)
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _saveCover,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Save',
+                            style: TextStyle(fontFamily: 'ProductSans'),
+                          ),
+                  ),
+              ],
+            ),
+          ),
+          // Image grid - show images from album first, then all images from vault
+          Expanded(
+            child: vaultFilesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => Center(
+                child: Text(
+                  'Failed to load files',
+                  style: TextStyle(
+                    fontFamily: 'ProductSans',
+                    color: AppColors.lightTextSecondary,
+                  ),
+                ),
+              ),
+              data: (allFiles) {
+                // Get all image files
+                final allImages =
+                    allFiles.where((f) => f.isImage || f.isVideo).toList();
+
+                // Get album files first
+                final albumFiles = albumFilesAsync.value ?? [];
+                final albumImages =
+                    albumFiles.where((f) => f.isImage || f.isVideo).toList();
+
+                // Combine with album images first
+                final Set<String> albumImageIds =
+                    albumImages.map((f) => f.id).toSet();
+                final otherImages = allImages
+                    .where((f) => !albumImageIds.contains(f.id))
+                    .toList();
+
+                final combinedImages = [...albumImages, ...otherImages];
+
+                if (combinedImages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.image_not_supported_outlined,
+                          size: 64,
+                          color: AppColors.lightTextTertiary,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No images available',
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            color: AppColors.lightTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Add some images to your vault first',
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 12,
+                            color: AppColors.lightTextTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (albumImages.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'From this album',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.lightTextTertiary,
+                            fontFamily: 'ProductSans',
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: GridView.builder(
+                        padding: const EdgeInsets.all(12),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                          childAspectRatio: 1,
+                        ),
+                        itemCount: combinedImages.length,
+                        itemBuilder: (context, index) {
+                          final file = combinedImages[index];
+                          final isFromAlbum = index < albumImages.length;
+
+                          // Add separator for "Other images" section
+                          if (index == albumImages.length &&
+                              albumImages.isNotEmpty) {
+                            // This won't work in GridView, so we handle it differently
+                          }
+
+                          return _buildImageItem(file, isFromAlbum);
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageItem(VaultedFile file, bool isFromAlbum) {
+    final isSelected = _selectedFileId == file.id;
+
+    return GestureDetector(
+      onTap: () => setState(() => _selectedFileId = file.id),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.lightBackgroundSecondary,
+              borderRadius: BorderRadius.circular(8),
+              border: isSelected
+                  ? Border.all(color: AppColors.accent, width: 3)
+                  : null,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(isSelected ? 5 : 8),
+              child: file.isImage
+                  ? Image.file(
+                      File(file.vaultPath),
+                      fit: BoxFit.cover,
+                      cacheWidth: 200,
+                      errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                    )
+                  : _buildVideoPlaceholder(),
+            ),
+          ),
+          // Selection indicator
+          if (isSelected)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.accent,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(Icons.check, size: 16, color: Colors.white),
+              ),
+            ),
+          // Current cover indicator
+          if (file.id == widget.album.coverImageId)
+            Positioned(
+              bottom: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Current',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontFamily: 'ProductSans',
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      color: Colors.grey.withValues(alpha: 0.2),
+      child: const Center(
+        child: Icon(Icons.broken_image, color: Colors.grey),
+      ),
+    );
+  }
+
+  Widget _buildVideoPlaceholder() {
+    return Container(
+      color: Colors.black87,
+      child: const Center(
+        child: Icon(
+          Icons.play_circle_outline,
+          size: 32,
+          color: Colors.white70,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveCover() async {
+    if (_selectedFileId == null) return;
+
+    setState(() => _isLoading = true);
+
+    final updated = await ref
+        .read(albumsNotifierProvider.notifier)
+        .updateAlbum(widget.album.copyWith(coverImageId: _selectedFileId));
+
+    setState(() => _isLoading = false);
+
+    if (updated != null) {
+      widget.onCoverChanged();
+      if (mounted) {
+        Navigator.pop(context);
+        ToastUtils.showSuccess('Album cover updated');
+      }
+    } else {
+      ToastUtils.showError('Failed to update cover');
+    }
   }
 }
