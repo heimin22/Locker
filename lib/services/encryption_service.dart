@@ -12,8 +12,12 @@ class EncryptionService {
   EncryptionService._();
   static final EncryptionService instance = EncryptionService._();
 
+  // Using the new secure cipher defaults (RSA OAEP + AES-GCM)
+  // instead of deprecated encryptedSharedPreferences
+  // migrateOnAlgorithmChange ensures existing data is automatically migrated
   static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: AndroidOptions(),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   static const String _masterKeyKey = 'vault_master_key';

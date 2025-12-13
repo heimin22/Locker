@@ -10,9 +10,8 @@ import 'package:local_auth_darwin/local_auth_darwin.dart';
 /// Authentication service that handles password and biometric authentication
 class AuthService {
   static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
+    aOptions: AndroidOptions(),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   static const String _passwordHashKey = 'user_password_hash';
