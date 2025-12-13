@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import '../services/auth_service.dart';
 import '../utils/toast_utils.dart';
+import 'gallery_vault_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -213,9 +214,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _navigateToMainApp() {
-    // TODO: Navigate to the main app screen
-    // For now, we'll show a success message
-    ToastUtils.showSuccess('Welcome to Locker!');
+    // Navigate to the main gallery vault screen
+    // Using pushReplacement to prevent going back to login screen
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => const GalleryVaultScreen(),
+      ),
+    );
   }
 
   @override

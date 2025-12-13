@@ -12,7 +12,8 @@ class DecoyService {
   static final DecoyService instance = DecoyService._();
 
   static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: AndroidOptions(),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   static const String _decoyEnabledKey = 'decoy_mode_enabled';
