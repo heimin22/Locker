@@ -10,6 +10,9 @@ import '../utils/toast_utils.dart';
 import 'albums_screen.dart';
 import 'media_viewer_screen.dart';
 import 'document_viewer_screen.dart';
+import '../widgets/permission_warning_banner.dart';
+import 'media_picker_screen.dart';
+import 'package:photo_manager/photo_manager.dart' hide AlbumType;
 
 /// Gallery vault screen - main screen after authentication
 class GalleryVaultScreen extends ConsumerStatefulWidget {
@@ -60,6 +63,8 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
       appBar: _buildAppBar(isSelectionMode, selectedFiles),
       body: Column(
         children: [
+          // Permission warning banner for All Files Access
+          const PermissionWarningBanner(),
           if (_isImporting) _buildImportProgress(),
           if (_isSearching) _buildSearchBar(),
           _buildTabBar(filesAsync),
@@ -98,6 +103,11 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.visibility_outlined, color: Colors.white),
+            onPressed: () => _unhideSelectedFiles(selectedFiles),
+            tooltip: 'Unhide (restore to gallery)',
+          ),
           IconButton(
             icon: const Icon(Icons.folder_outlined, color: Colors.white),
             onPressed: () => _showAddToAlbumSheet(selectedFiles),
@@ -612,13 +622,37 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
   }
 
   Widget _buildFileThumbnail(VaultedFile file) {
-    if (file.isImage && !file.isEncrypted) {
+    // Show image thumbnail
+    if (file.isImage) {
       return Image.file(
         File(file.vaultPath),
         fit: BoxFit.cover,
+        cacheWidth: 300, // Limit resolution for performance
         errorBuilder: (context, error, stackTrace) => _buildPlaceholder(file),
       );
     }
+
+    // Show video thumbnail (first frame preview)
+    if (file.isVideo) {
+      // Try to show video thumbnail from the vault path
+      // Videos don't have a simple thumbnail, so we use a styled placeholder
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            color: Colors.black87,
+            child: const Center(
+              child: Icon(
+                Icons.play_circle_outline,
+                size: 48,
+                color: Colors.white70,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return _buildPlaceholder(file);
   }
 
@@ -626,28 +660,23 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
     IconData icon;
     Color color;
 
-    if (file.isEncrypted) {
-      icon = Icons.lock;
-      color = Colors.green;
-    } else {
-      switch (file.type) {
-        case VaultedFileType.image:
-          icon = Icons.image;
-          color = Colors.blue;
-          break;
-        case VaultedFileType.video:
-          icon = Icons.videocam;
-          color = Colors.red;
-          break;
-        case VaultedFileType.document:
-          icon = _getDocumentIcon(file.extension);
-          color = _getDocumentColor(file.extension);
-          break;
-        case VaultedFileType.other:
-          icon = Icons.insert_drive_file;
-          color = Colors.grey;
-          break;
-      }
+    switch (file.type) {
+      case VaultedFileType.image:
+        icon = Icons.image;
+        color = Colors.blue;
+        break;
+      case VaultedFileType.video:
+        icon = Icons.videocam;
+        color = Colors.red;
+        break;
+      case VaultedFileType.document:
+        icon = _getDocumentIcon(file.extension);
+        color = _getDocumentColor(file.extension);
+        break;
+      case VaultedFileType.other:
+        icon = Icons.insert_drive_file;
+        color = Colors.grey;
+        break;
     }
 
     return Container(
@@ -660,7 +689,7 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              file.isEncrypted ? 'ENCRYPTED' : file.extension.toUpperCase(),
+              file.extension.toUpperCase(),
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
@@ -1314,6 +1343,81 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
     _exitSelectionMode();
   }
 
+  Future<void> _unhideSelectedFiles(Set<String> selectedFiles) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.lightBackground,
+        title: Text(
+          'Unhide Files',
+          style: TextStyle(
+            fontFamily: 'ProductSans',
+            color: AppColors.lightTextPrimary,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to unhide ${selectedFiles.length} file(s)? This will restore them to your device gallery (DCIM/Restored folder) and remove them from the vault.',
+          style: TextStyle(
+            fontFamily: 'ProductSans',
+            color: AppColors.lightTextSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                color: AppColors.lightTextSecondary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Unhide',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                color: AppColors.accent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _isImporting = true;
+        _importProgress = 0;
+        _importTotal = selectedFiles.length;
+      });
+
+      final result = await _importService.unhideFiles(
+        fileIds: selectedFiles.toList(),
+        removeFromVault: true,
+        onProgress: (current, total) {
+          setState(() {
+            _importProgress = current;
+            _importTotal = total;
+          });
+        },
+      );
+
+      setState(() => _isImporting = false);
+      _exitSelectionMode();
+
+      if (result.success && result.unhiddenCount > 0) {
+        ToastUtils.showSuccess(result.message ?? 'Files restored to gallery');
+        ref.read(vaultNotifierProvider.notifier).loadFiles();
+      } else if (!result.success) {
+        ToastUtils.showError(result.error ?? 'Failed to unhide files');
+      }
+    }
+  }
+
   Future<void> _deleteSelectedFiles(Set<String> selectedFiles) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1787,13 +1891,31 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
   // Import methods
   Future<void> _importImagesFromGallery() async {
     Navigator.pop(context);
+
+    // Open custom media picker for images
+    final selectedAssets = await Navigator.push<List<AssetEntity>?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MediaPickerScreen(
+          requestType: RequestType.image,
+          title: 'Select Images to Hide',
+        ),
+      ),
+    );
+
+    if (selectedAssets == null || selectedAssets.isEmpty) {
+      ToastUtils.showInfo('No images selected');
+      return;
+    }
+
     setState(() {
       _isImporting = true;
       _importProgress = 0;
-      _importTotal = 0;
+      _importTotal = selectedAssets.length;
     });
 
-    final result = await _importService.importImagesFromGallery(
+    final result = await _importService.importFromAssets(
+      assets: selectedAssets,
       deleteOriginals: true, // Hide from gallery
       onProgress: (current, total) {
         setState(() {
@@ -1808,25 +1930,41 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
     if (result.success && result.importedCount > 0) {
       final msg = result.deletedOriginals
           ? 'Imported and hidden ${result.importedCount} image(s)'
-          : 'Imported ${result.importedCount} image(s)';
+          : 'Imported ${result.importedCount} image(s) (originals may still be visible)';
       ToastUtils.showSuccess(msg);
       ref.read(vaultNotifierProvider.notifier).loadFiles();
     } else if (!result.success) {
       ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No images selected');
     }
   }
 
   Future<void> _importVideosFromGallery() async {
     Navigator.pop(context);
+
+    // Open custom media picker for videos
+    final selectedAssets = await Navigator.push<List<AssetEntity>?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MediaPickerScreen(
+          requestType: RequestType.video,
+          title: 'Select Videos to Hide',
+        ),
+      ),
+    );
+
+    if (selectedAssets == null || selectedAssets.isEmpty) {
+      ToastUtils.showInfo('No videos selected');
+      return;
+    }
+
     setState(() {
       _isImporting = true;
       _importProgress = 0;
-      _importTotal = 0;
+      _importTotal = selectedAssets.length;
     });
 
-    final result = await _importService.importVideosFromGallery(
+    final result = await _importService.importFromAssets(
+      assets: selectedAssets,
       deleteOriginals: true, // Hide from gallery
       onProgress: (current, total) {
         setState(() {
@@ -1841,25 +1979,41 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
     if (result.success && result.importedCount > 0) {
       final msg = result.deletedOriginals
           ? 'Imported and hidden ${result.importedCount} video(s)'
-          : 'Imported ${result.importedCount} video(s)';
+          : 'Imported ${result.importedCount} video(s) (originals may still be visible)';
       ToastUtils.showSuccess(msg);
       ref.read(vaultNotifierProvider.notifier).loadFiles();
     } else if (!result.success) {
       ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No videos selected');
     }
   }
 
   Future<void> _importMediaFromGallery() async {
     Navigator.pop(context);
+
+    // Open custom media picker for all media (images and videos)
+    final selectedAssets = await Navigator.push<List<AssetEntity>?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MediaPickerScreen(
+          requestType: RequestType.common,
+          title: 'Select Media to Hide',
+        ),
+      ),
+    );
+
+    if (selectedAssets == null || selectedAssets.isEmpty) {
+      ToastUtils.showInfo('No media selected');
+      return;
+    }
+
     setState(() {
       _isImporting = true;
       _importProgress = 0;
-      _importTotal = 0;
+      _importTotal = selectedAssets.length;
     });
 
-    final result = await _importService.importMediaFromGallery(
+    final result = await _importService.importFromAssets(
+      assets: selectedAssets,
       deleteOriginals: true, // Hide from gallery
       onProgress: (current, total) {
         setState(() {
@@ -1874,13 +2028,11 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
     if (result.success && result.importedCount > 0) {
       final msg = result.deletedOriginals
           ? 'Imported and hidden ${result.importedCount} file(s)'
-          : 'Imported ${result.importedCount} file(s)';
+          : 'Imported ${result.importedCount} file(s) (originals may still be visible)';
       ToastUtils.showSuccess(msg);
       ref.read(vaultNotifierProvider.notifier).loadFiles();
     } else if (!result.success) {
       ToastUtils.showError(result.error ?? 'Import failed');
-    } else {
-      ToastUtils.showInfo('No media selected');
     }
   }
 

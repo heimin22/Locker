@@ -33,6 +33,13 @@ class FileImportService {
         );
       }
 
+      // Check if we have all files access for deletion
+      final hasAllFilesAccess = await _permissionService.hasAllFilesAccess();
+      if (deleteOriginals && !hasAllFilesAccess) {
+        debugPrint(
+            '[FileImport] Warning: All Files Access not granted. Original files may not be deleted from gallery.');
+      }
+
       // Pick multiple images using image_picker for UI
       final images = await _imagePicker.pickMultiImage(
         imageQuality: 100,
@@ -46,15 +53,18 @@ class FileImportService {
         );
       }
 
-      // Get all image assets from gallery to find matching ones for deletion
+      debugPrint('[FileImport] Selected ${images.length} images for import');
+
+      // Track assets to delete BEFORE importing (so we can find them by filename)
       List<AssetEntity> assetsToDelete = [];
-      final originalPaths = <String>[];
       if (deleteOriginals) {
-        assetsToDelete = await _findMatchingAssets(
-          images.map((i) => i.name).toList(),
-          RequestType.image,
-        );
-        originalPaths.addAll(images.map((i) => i.path));
+        final fileNames = images.map((i) => i.name).toList();
+        debugPrint(
+            '[FileImport] Looking for assets to delete with names: $fileNames');
+        assetsToDelete =
+            await _findMatchingAssets(fileNames, RequestType.image);
+        debugPrint(
+            '[FileImport] Found ${assetsToDelete.length} matching assets in gallery');
       }
 
       // Convert to FileToVault list
@@ -72,36 +82,312 @@ class FileImportService {
       // Add to vault
       final imported = await _vaultService.addFiles(
         files: filesToVault,
-        deleteOriginals:
-            false, // We'll handle deletion separately via PhotoManager
+        deleteOriginals: false, // We handle deletion via PhotoManager
         onProgress: onProgress,
       );
 
+      debugPrint('[FileImport] Imported ${imported.length} files to vault');
+
       // Delete originals from gallery if requested and import was successful
-      if (deleteOriginals && imported.isNotEmpty) {
-        var deleted = false;
-        if (assetsToDelete.isNotEmpty) {
-          deleted = await _deleteAssetsFromGallery(assetsToDelete);
-        }
-        // If gallery deletion failed or had no matches, try deleting by path
-        if (!deleted && originalPaths.isNotEmpty) {
-          await _deleteFiles(originalPaths);
-        }
+      bool deletedFromGallery = false;
+      if (deleteOriginals && imported.isNotEmpty && assetsToDelete.isNotEmpty) {
+        debugPrint(
+            '[FileImport] Attempting to delete ${assetsToDelete.length} assets from gallery');
+        deletedFromGallery = await _deleteAssetsFromGallery(assetsToDelete);
+        debugPrint('[FileImport] Gallery deletion result: $deletedFromGallery');
       }
 
       return ImportResult(
         success: true,
         importedFiles: imported,
         message: 'Imported ${imported.length} image(s)',
-        deletedOriginals: deleteOriginals && assetsToDelete.isNotEmpty,
+        deletedOriginals: deletedFromGallery,
       );
     } catch (e) {
-      debugPrint('Error importing images from gallery: $e');
+      debugPrint('[FileImport] Error importing images from gallery: $e');
       return ImportResult(
         success: false,
         error: 'Failed to import images: $e',
         importedFiles: [],
       );
+    }
+  }
+
+  /// Import media directly from AssetEntity objects (from custom media picker)
+  /// This is the preferred method as it gives us direct access to the original files
+  Future<ImportResult> importFromAssets({
+    required List<AssetEntity> assets,
+    bool deleteOriginals = true,
+    Function(int current, int total)? onProgress,
+  }) async {
+    if (assets.isEmpty) {
+      return ImportResult(
+        success: true,
+        importedFiles: [],
+        message: 'No assets selected',
+      );
+    }
+
+    try {
+      debugPrint('[FileImport] Importing ${assets.length} assets directly');
+
+      // Check if we have all files access for deletion
+      final hasAllFilesAccess = await _permissionService.hasAllFilesAccess();
+      if (deleteOriginals && !hasAllFilesAccess) {
+        debugPrint(
+            '[FileImport] Warning: All Files Access not granted. Original files may not be deleted from gallery.');
+      }
+
+      final filesToVault = <FileToVault>[];
+      final validAssets = <AssetEntity>[];
+      int processed = 0;
+
+      for (final asset in assets) {
+        try {
+          // Get the actual file from the asset
+          final file = await asset.file;
+          if (file == null) {
+            debugPrint(
+                '[FileImport] Could not get file for asset: ${asset.title}');
+            continue;
+          }
+
+          final filePath = file.path;
+          final fileName =
+              asset.title ?? 'unknown_${DateTime.now().millisecondsSinceEpoch}';
+
+          // Determine file type
+          VaultedFileType type;
+          String mimeType;
+
+          if (asset.type == AssetType.video) {
+            type = VaultedFileType.video;
+            mimeType = lookupMimeType(filePath) ?? 'video/mp4';
+          } else if (asset.type == AssetType.image) {
+            type = VaultedFileType.image;
+            mimeType = lookupMimeType(filePath) ?? 'image/jpeg';
+          } else {
+            type = VaultedFileType.other;
+            mimeType = lookupMimeType(filePath) ?? 'application/octet-stream';
+          }
+
+          filesToVault.add(FileToVault(
+            sourcePath: filePath,
+            originalName: fileName,
+            type: type,
+            mimeType: mimeType,
+          ));
+          validAssets.add(asset);
+
+          processed++;
+          onProgress?.call(processed, assets.length);
+
+          debugPrint(
+              '[FileImport] Prepared asset for import: $fileName (path: $filePath)');
+        } catch (e) {
+          debugPrint('[FileImport] Error processing asset ${asset.title}: $e');
+        }
+      }
+
+      if (filesToVault.isEmpty) {
+        return ImportResult(
+          success: false,
+          error: 'Could not access any of the selected files',
+          importedFiles: [],
+        );
+      }
+
+      debugPrint('[FileImport] Adding ${filesToVault.length} files to vault');
+
+      // Add to vault (copy files to vault directory)
+      final imported = await _vaultService.addFiles(
+        files: filesToVault,
+        deleteOriginals: false, // We handle deletion via PhotoManager
+        onProgress: (current, total) {
+          onProgress?.call(assets.length + current, assets.length + total);
+        },
+      );
+
+      debugPrint('[FileImport] Imported ${imported.length} files to vault');
+
+      // Delete originals from gallery if requested and import was successful
+      bool deletedFromGallery = false;
+      if (deleteOriginals && imported.isNotEmpty && validAssets.isNotEmpty) {
+        debugPrint(
+            '[FileImport] Attempting to delete ${validAssets.length} assets from gallery');
+        deletedFromGallery = await _deleteAssetsFromGallery(validAssets);
+
+        if (deletedFromGallery) {
+          debugPrint(
+              '[FileImport] Successfully deleted ${validAssets.length} assets from gallery');
+        } else {
+          debugPrint(
+              '[FileImport] Failed to delete assets from gallery. Files are imported but originals remain.');
+        }
+      }
+
+      return ImportResult(
+        success: true,
+        importedFiles: imported,
+        message:
+            'Imported ${imported.length} file(s)${deletedFromGallery ? " and removed from gallery" : ""}',
+        deletedOriginals: deletedFromGallery,
+      );
+    } catch (e, stackTrace) {
+      debugPrint('[FileImport] Error importing from assets: $e');
+      debugPrint('[FileImport] Stack trace: $stackTrace');
+      return ImportResult(
+        success: false,
+        error: 'Failed to import files: $e',
+        importedFiles: [],
+      );
+    }
+  }
+
+  /// Unhide files from vault - restores them back to the device gallery
+  Future<UnhideResult> unhideFiles({
+    required List<String> fileIds,
+    bool removeFromVault = true,
+    Function(int current, int total)? onProgress,
+  }) async {
+    if (fileIds.isEmpty) {
+      return UnhideResult(
+        success: true,
+        unhiddenCount: 0,
+        message: 'No files selected',
+      );
+    }
+
+    try {
+      debugPrint('[FileImport] Unhiding ${fileIds.length} files');
+
+      // Check if we have all files access
+      final hasAllFilesAccess = await _permissionService.hasAllFilesAccess();
+      if (!hasAllFilesAccess) {
+        debugPrint(
+            '[FileImport] Warning: All Files Access not granted. Unhiding may fail.');
+      }
+
+      // Get the destination directory (DCIM/Restored)
+      final dcimDir = Directory('/storage/emulated/0/DCIM/Restored');
+      if (!await dcimDir.exists()) {
+        await dcimDir.create(recursive: true);
+      }
+
+      int successCount = 0;
+      int errorCount = 0;
+      final List<String> restoredPaths = [];
+
+      for (int i = 0; i < fileIds.length; i++) {
+        try {
+          final fileId = fileIds[i];
+          final vaultedFile = await _vaultService.getFileById(fileId);
+
+          if (vaultedFile == null) {
+            debugPrint('[FileImport] File not found in vault: $fileId');
+            errorCount++;
+            continue;
+          }
+
+          // Determine destination path with original filename
+          String destinationPath =
+              '${dcimDir.path}/${vaultedFile.originalName}';
+
+          // Handle duplicate filenames
+          int counter = 1;
+          while (await File(destinationPath).exists()) {
+            final extension = vaultedFile.extension;
+            final nameWithoutExt =
+                vaultedFile.originalName.replaceAll('.$extension', '');
+            destinationPath =
+                '${dcimDir.path}/${nameWithoutExt}_$counter.$extension';
+            counter++;
+          }
+
+          // Export the file from vault
+          final exportedFile =
+              await _vaultService.exportFile(fileId, destinationPath);
+
+          if (exportedFile != null && await exportedFile.exists()) {
+            debugPrint('[FileImport] Exported file to: $destinationPath');
+
+            // Notify MediaStore to scan the new file so it appears in gallery
+            await _notifyMediaStore(destinationPath);
+
+            restoredPaths.add(destinationPath);
+            successCount++;
+
+            // Remove from vault if requested
+            if (removeFromVault) {
+              await _vaultService.removeFile(fileId);
+              debugPrint('[FileImport] Removed file from vault: $fileId');
+            }
+          } else {
+            debugPrint(
+                '[FileImport] Failed to export file: ${vaultedFile.originalName}');
+            errorCount++;
+          }
+
+          onProgress?.call(i + 1, fileIds.length);
+        } catch (e) {
+          debugPrint('[FileImport] Error unhiding file: $e');
+          errorCount++;
+        }
+      }
+
+      final message = successCount > 0
+          ? 'Restored $successCount file(s) to gallery${errorCount > 0 ? ' ($errorCount failed)' : ''}'
+          : 'Failed to restore files';
+
+      return UnhideResult(
+        success: successCount > 0,
+        unhiddenCount: successCount,
+        errorCount: errorCount,
+        restoredPaths: restoredPaths,
+        message: message,
+      );
+    } catch (e, stackTrace) {
+      debugPrint('[FileImport] Error unhiding files: $e');
+      debugPrint('[FileImport] Stack trace: $stackTrace');
+      return UnhideResult(
+        success: false,
+        unhiddenCount: 0,
+        error: 'Failed to unhide files: $e',
+      );
+    }
+  }
+
+  /// Notify MediaStore to scan a file so it appears in the gallery
+  Future<void> _notifyMediaStore(String filePath) async {
+    try {
+      // Use PhotoManager to notify the system about the new file
+      // This makes the file appear in the device's gallery
+      final file = File(filePath);
+      if (await file.exists()) {
+        // The saveImage/saveVideo methods register the file with MediaStore
+        final bytes = await file.readAsBytes();
+        final mimeType = lookupMimeType(filePath) ?? '';
+
+        if (mimeType.startsWith('image/')) {
+          await PhotoManager.editor.saveImage(
+            bytes,
+            filename: filePath.split('/').last,
+          );
+          debugPrint(
+              '[FileImport] Registered image with MediaStore: $filePath');
+        } else if (mimeType.startsWith('video/')) {
+          await PhotoManager.editor.saveVideo(
+            file,
+            title: filePath.split('/').last,
+          );
+          debugPrint(
+              '[FileImport] Registered video with MediaStore: $filePath');
+        }
+        // For other file types, they should still be accessible via file manager
+      }
+    } catch (e) {
+      debugPrint('[FileImport] Error notifying MediaStore: $e');
+      // Even if MediaStore notification fails, the file is still restored to DCIM
     }
   }
 
@@ -121,6 +407,13 @@ class FileImportService {
         );
       }
 
+      // Check if we have all files access for deletion
+      final hasAllFilesAccess = await _permissionService.hasAllFilesAccess();
+      if (deleteOriginals && !hasAllFilesAccess) {
+        debugPrint(
+            '[FileImport] Warning: All Files Access not granted. Original videos may not be deleted from gallery.');
+      }
+
       // Pick videos using file_picker for multiple selection
       final result = await FilePicker.platform.pickFiles(
         type: FileType.video,
@@ -135,16 +428,19 @@ class FileImportService {
         );
       }
 
-      // Get matching assets for deletion
+      debugPrint(
+          '[FileImport] Selected ${result.files.length} videos for import');
+
+      // Track assets to delete BEFORE importing
       List<AssetEntity> assetsToDelete = [];
-      final originalPaths = <String>[];
       if (deleteOriginals) {
-        assetsToDelete = await _findMatchingAssets(
-          result.files.map((f) => f.name).toList(),
-          RequestType.video,
-        );
-        originalPaths.addAll(
-            result.files.where((f) => f.path != null).map((f) => f.path!));
+        final fileNames = result.files.map((f) => f.name).toList();
+        debugPrint(
+            '[FileImport] Looking for video assets to delete with names: $fileNames');
+        assetsToDelete =
+            await _findMatchingAssets(fileNames, RequestType.video);
+        debugPrint(
+            '[FileImport] Found ${assetsToDelete.length} matching video assets in gallery');
       }
 
       // Convert to FileToVault list
@@ -164,29 +460,29 @@ class FileImportService {
       // Add to vault
       final imported = await _vaultService.addFiles(
         files: filesToVault,
-        deleteOriginals: false,
+        deleteOriginals: false, // We handle deletion via PhotoManager
         onProgress: onProgress,
       );
 
-      // Delete originals from gallery
-      if (deleteOriginals && imported.isNotEmpty) {
-        var deleted = false;
-        if (assetsToDelete.isNotEmpty) {
-          deleted = await _deleteAssetsFromGallery(assetsToDelete);
-        }
-        if (!deleted && originalPaths.isNotEmpty) {
-          await _deleteFiles(originalPaths);
-        }
+      debugPrint('[FileImport] Imported ${imported.length} videos to vault');
+
+      // Delete originals from gallery if requested and import was successful
+      bool deletedFromGallery = false;
+      if (deleteOriginals && imported.isNotEmpty && assetsToDelete.isNotEmpty) {
+        debugPrint(
+            '[FileImport] Attempting to delete ${assetsToDelete.length} video assets from gallery');
+        deletedFromGallery = await _deleteAssetsFromGallery(assetsToDelete);
+        debugPrint('[FileImport] Gallery deletion result: $deletedFromGallery');
       }
 
       return ImportResult(
         success: true,
         importedFiles: imported,
         message: 'Imported ${imported.length} video(s)',
-        deletedOriginals: deleteOriginals && assetsToDelete.isNotEmpty,
+        deletedOriginals: deletedFromGallery,
       );
     } catch (e) {
-      debugPrint('Error importing videos from gallery: $e');
+      debugPrint('[FileImport] Error importing videos from gallery: $e');
       return ImportResult(
         success: false,
         error: 'Failed to import videos: $e',
@@ -510,6 +806,13 @@ class FileImportService {
         );
       }
 
+      // Check if we have all files access for deletion
+      final hasAllFilesAccess = await _permissionService.hasAllFilesAccess();
+      if (deleteOriginals && !hasAllFilesAccess) {
+        debugPrint(
+            '[FileImport] Warning: All Files Access not granted. Original media may not be deleted from gallery.');
+      }
+
       // Pick media files (images and videos)
       final result = await FilePicker.platform.pickFiles(
         type: FileType.media,
@@ -524,16 +827,19 @@ class FileImportService {
         );
       }
 
-      // Get matching assets for deletion
+      debugPrint(
+          '[FileImport] Selected ${result.files.length} media files for import');
+
+      // Track assets to delete BEFORE importing
       List<AssetEntity> assetsToDelete = [];
-      final originalPaths = <String>[];
       if (deleteOriginals) {
-        assetsToDelete = await _findMatchingAssets(
-          result.files.map((f) => f.name).toList(),
-          RequestType.common,
-        );
-        originalPaths.addAll(
-            result.files.where((f) => f.path != null).map((f) => f.path!));
+        final fileNames = result.files.map((f) => f.name).toList();
+        debugPrint(
+            '[FileImport] Looking for media assets to delete with names: $fileNames');
+        assetsToDelete =
+            await _findMatchingAssets(fileNames, RequestType.common);
+        debugPrint(
+            '[FileImport] Found ${assetsToDelete.length} matching media assets in gallery');
       }
 
       // Convert to FileToVault list
@@ -556,29 +862,30 @@ class FileImportService {
       // Add to vault
       final imported = await _vaultService.addFiles(
         files: filesToVault,
-        deleteOriginals: false,
+        deleteOriginals: false, // We handle deletion via PhotoManager
         onProgress: onProgress,
       );
 
-      // Delete from gallery if requested
-      if (deleteOriginals && imported.isNotEmpty) {
-        var deleted = false;
-        if (assetsToDelete.isNotEmpty) {
-          deleted = await _deleteAssetsFromGallery(assetsToDelete);
-        }
-        if (!deleted && originalPaths.isNotEmpty) {
-          await _deleteFiles(originalPaths);
-        }
+      debugPrint(
+          '[FileImport] Imported ${imported.length} media files to vault');
+
+      // Delete originals from gallery if requested and import was successful
+      bool deletedFromGallery = false;
+      if (deleteOriginals && imported.isNotEmpty && assetsToDelete.isNotEmpty) {
+        debugPrint(
+            '[FileImport] Attempting to delete ${assetsToDelete.length} media assets from gallery');
+        deletedFromGallery = await _deleteAssetsFromGallery(assetsToDelete);
+        debugPrint('[FileImport] Gallery deletion result: $deletedFromGallery');
       }
 
       return ImportResult(
         success: true,
         importedFiles: imported,
         message: 'Imported ${imported.length} media file(s)',
-        deletedOriginals: deleteOriginals && assetsToDelete.isNotEmpty,
+        deletedOriginals: deletedFromGallery,
       );
     } catch (e) {
-      debugPrint('Error importing media: $e');
+      debugPrint('[FileImport] Error importing media: $e');
       return ImportResult(
         success: false,
         error: 'Failed to import media: $e',
@@ -595,9 +902,17 @@ class FileImportService {
     final matchingAssets = <AssetEntity>[];
 
     try {
+      debugPrint(
+          '[FileImport] Finding matching assets for ${fileNames.length} files');
+
       // Get all albums
       final albums = await PhotoManager.getAssetPathList(type: type);
-      if (albums.isEmpty) return matchingAssets;
+      debugPrint('[FileImport] Found ${albums.length} albums to search');
+
+      if (albums.isEmpty) {
+        debugPrint('[FileImport] No albums found, cannot match assets');
+        return matchingAssets;
+      }
 
       // Convert filenames to a set for faster lookup (with and without extension)
       final fileNameSet = <String>{};
@@ -610,7 +925,10 @@ class FileImportService {
         }
       }
 
+      debugPrint('[FileImport] Looking for files matching: $fileNameSet');
+
       // Search through all albums
+      int totalAssetsSearched = 0;
       for (final album in albums) {
         final count = await album.assetCountAsync;
         if (count == 0) continue;
@@ -623,6 +941,8 @@ class FileImportService {
             end: (i + batchSize).clamp(0, count),
           );
 
+          totalAssetsSearched += assets.length;
+
           for (final asset in assets) {
             final title = asset.title?.toLowerCase() ?? '';
             final titleNoExt = title.contains('.')
@@ -630,6 +950,8 @@ class FileImportService {
                 : title;
             if (fileNameSet.contains(title) ||
                 fileNameSet.contains(titleNoExt)) {
+              debugPrint(
+                  '[FileImport] Found matching asset: ${asset.title} (id: ${asset.id})');
               matchingAssets.add(asset);
               // Remove from set to avoid duplicates
               fileNameSet.remove(title);
@@ -637,30 +959,63 @@ class FileImportService {
 
               // If we found all files, return early
               if (fileNameSet.isEmpty) {
+                debugPrint(
+                    '[FileImport] Found all ${matchingAssets.length} matching assets');
                 return matchingAssets;
               }
             }
           }
         }
       }
-    } catch (e) {
-      debugPrint('Error finding matching assets: $e');
+
+      debugPrint('[FileImport] Searched $totalAssetsSearched assets total');
+      if (fileNameSet.isNotEmpty) {
+        debugPrint('[FileImport] Could not find matches for: $fileNameSet');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[FileImport] Error finding matching assets: $e');
+      debugPrint('[FileImport] Stack trace: $stackTrace');
     }
 
+    debugPrint(
+        '[FileImport] Returning ${matchingAssets.length} matching assets');
     return matchingAssets;
   }
 
   /// Delete assets from gallery using PhotoManager
   Future<bool> _deleteAssetsFromGallery(List<AssetEntity> assets) async {
-    if (assets.isEmpty) return true;
+    if (assets.isEmpty) {
+      debugPrint('[FileImport] No assets to delete');
+      return true;
+    }
 
     try {
+      // Log asset details for debugging (avoid asset.file to prevent decode errors)
+      for (final asset in assets) {
+        debugPrint(
+            '[FileImport] Deleting asset: ${asset.title} (id: ${asset.id})');
+      }
+
       final ids = assets.map((a) => a.id).toList();
+      debugPrint(
+          '[FileImport] Calling PhotoManager.editor.deleteWithIds with ${ids.length} IDs');
+
       final result = await PhotoManager.editor.deleteWithIds(ids);
-      debugPrint('Deleted ${result.length} assets from gallery');
+
+      debugPrint(
+          '[FileImport] Delete result: ${result.length} assets deleted successfully');
+
+      if (result.length < assets.length) {
+        debugPrint(
+            '[FileImport] Warning: Not all assets were deleted. Requested: ${assets.length}, Deleted: ${result.length}');
+        debugPrint(
+            '[FileImport] This may be due to missing "All Files Access" permission on Android 11+');
+      }
+
       return result.isNotEmpty;
-    } catch (e) {
-      debugPrint('Error deleting assets from gallery: $e');
+    } catch (e, stackTrace) {
+      debugPrint('[FileImport] Error deleting assets from gallery: $e');
+      debugPrint('[FileImport] Stack trace: $stackTrace');
       return false;
     }
   }
@@ -726,5 +1081,32 @@ class ImportResult {
       return 'ImportResult: Success - ${message ?? "Imported $importedCount file(s)"}${deletedOriginals ? " (originals deleted)" : ""}';
     }
     return 'ImportResult: Failed - $error';
+  }
+}
+
+/// Result of an unhide operation
+class UnhideResult {
+  final bool success;
+  final int unhiddenCount;
+  final int errorCount;
+  final String? error;
+  final String? message;
+  final List<String> restoredPaths;
+
+  const UnhideResult({
+    required this.success,
+    required this.unhiddenCount,
+    this.errorCount = 0,
+    this.error,
+    this.message,
+    this.restoredPaths = const [],
+  });
+
+  @override
+  String toString() {
+    if (success) {
+      return 'UnhideResult: Success - ${message ?? "Unhidden $unhiddenCount file(s)"}';
+    }
+    return 'UnhideResult: Failed - $error';
   }
 }
