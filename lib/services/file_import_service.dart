@@ -696,6 +696,108 @@ class FileImportService {
     }
   }
 
+  /// Import documents from file paths (from custom document picker)
+  /// This is the preferred method for the custom document picker
+  Future<ImportResult> importFromDocumentFiles({
+    required List<String> filePaths,
+    bool deleteOriginals = true,
+    Function(int current, int total)? onProgress,
+  }) async {
+    if (filePaths.isEmpty) {
+      return ImportResult(
+        success: true,
+        importedFiles: [],
+        message: 'No documents selected',
+      );
+    }
+
+    try {
+      debugPrint(
+          '[FileImport] Importing ${filePaths.length} documents directly');
+
+      final filesToVault = <FileToVault>[];
+      final pathsToDelete = <String>[];
+      int processed = 0;
+
+      for (final path in filePaths) {
+        try {
+          final file = File(path);
+          if (!await file.exists()) {
+            debugPrint('[FileImport] File does not exist: $path');
+            continue;
+          }
+
+          final fileName = path.split('/').last;
+          final mimeType = lookupMimeType(path) ?? 'application/octet-stream';
+
+          filesToVault.add(FileToVault(
+            sourcePath: path,
+            originalName: fileName,
+            type: VaultedFileType.document,
+            mimeType: mimeType,
+          ));
+
+          pathsToDelete.add(path);
+
+          processed++;
+          onProgress?.call(processed, filePaths.length);
+
+          debugPrint('[FileImport] Prepared document for import: $fileName');
+        } catch (e) {
+          debugPrint('[FileImport] Error processing document $path: $e');
+        }
+      }
+
+      if (filesToVault.isEmpty) {
+        return ImportResult(
+          success: false,
+          error: 'Could not access any of the selected files',
+          importedFiles: [],
+        );
+      }
+
+      debugPrint(
+          '[FileImport] Adding ${filesToVault.length} documents to vault');
+
+      // Add to vault
+      final imported = await _vaultService.addFiles(
+        files: filesToVault,
+        deleteOriginals: false,
+        onProgress: (current, total) {
+          onProgress?.call(
+              filePaths.length + current, filePaths.length + total);
+        },
+      );
+
+      debugPrint('[FileImport] Imported ${imported.length} documents to vault');
+
+      // Delete originals if requested
+      bool deletedOriginals = false;
+      if (deleteOriginals && imported.isNotEmpty && pathsToDelete.isNotEmpty) {
+        debugPrint(
+            '[FileImport] Deleting ${pathsToDelete.length} original documents');
+        await _deleteFiles(pathsToDelete);
+        deletedOriginals = true;
+      }
+
+      return ImportResult(
+        success: true,
+        importedFiles: imported,
+        message:
+            'Imported ${imported.length} document(s)${deletedOriginals ? " and removed originals" : ""}',
+        deletedOriginals: deletedOriginals,
+      );
+    } catch (e, stackTrace) {
+      debugPrint('[FileImport] Error importing documents from files: $e');
+      debugPrint('[FileImport] Stack trace: $stackTrace');
+      return ImportResult(
+        success: false,
+        error: 'Failed to import documents: $e',
+        importedFiles: [],
+      );
+    }
+  }
+
   /// Import any files from file manager
   Future<ImportResult> importAnyFiles({
     bool deleteOriginals = true,

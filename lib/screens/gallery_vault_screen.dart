@@ -15,6 +15,7 @@ import 'media_viewer_screen.dart';
 import 'document_viewer_screen.dart';
 import '../widgets/permission_warning_banner.dart';
 import 'media_picker_screen.dart';
+import 'document_picker_screen.dart';
 import 'package:photo_manager/photo_manager.dart' hide AlbumType;
 
 /// Gallery vault screen - main screen after authentication
@@ -2224,13 +2225,30 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
 
   Future<void> _importDocuments() async {
     Navigator.pop(context);
+
+    // Open custom document picker
+    final selectedDocuments = await Navigator.push<List<DocumentFile>?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const DocumentPickerScreen(
+          title: 'Select Documents to Hide',
+        ),
+      ),
+    );
+
+    if (selectedDocuments == null || selectedDocuments.isEmpty) {
+      ToastUtils.showInfo('No documents selected');
+      return;
+    }
+
     setState(() {
       _isImporting = true;
       _importProgress = 0;
-      _importTotal = 0;
+      _importTotal = selectedDocuments.length;
     });
 
-    final result = await _importService.importDocuments(
+    final result = await _importService.importFromDocumentFiles(
+      filePaths: selectedDocuments.map((d) => d.path).toList(),
       deleteOriginals: true, // Hide from file manager
       onProgress: (current, total) {
         setState(() {
