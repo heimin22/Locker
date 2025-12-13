@@ -747,8 +747,12 @@ class VaultService {
       _cachedAlbums![albumIndex] = _cachedAlbums![albumIndex].addFile(fileId);
       await _saveAlbums();
 
-      // Update file
-      await updateFile(file.addToAlbum(albumId));
+      // Update file - also set isFavorite if adding to favorites album
+      VaultedFile updatedFile = file.addToAlbum(albumId);
+      if (albumId == 'favorites') {
+        updatedFile = updatedFile.copyWith(isFavorite: true);
+      }
+      await updateFile(updatedFile);
 
       return true;
     } catch (e) {
@@ -769,10 +773,14 @@ class VaultService {
           _cachedAlbums![albumIndex].removeFile(fileId);
       await _saveAlbums();
 
-      // Update file
+      // Update file - also unset isFavorite if removing from favorites album
       final file = await getFileById(fileId);
       if (file != null) {
-        await updateFile(file.removeFromAlbum(albumId));
+        VaultedFile updatedFile = file.removeFromAlbum(albumId);
+        if (albumId == 'favorites') {
+          updatedFile = updatedFile.copyWith(isFavorite: false);
+        }
+        await updateFile(updatedFile);
       }
 
       return true;
@@ -907,20 +915,25 @@ class VaultService {
     final file = await getFileById(fileId);
     if (file == null) return null;
 
-    final updatedFile = file.toggleFavorite();
-    await updateFile(updatedFile);
-
-    // Update favorites album
+    // Update favorites album - this will also update the isFavorite flag
     final favoritesAlbum = await getAlbumById('favorites');
     if (favoritesAlbum != null) {
-      if (updatedFile.isFavorite) {
-        await addFileToAlbum(fileId, 'favorites');
-      } else {
+      if (file.isFavorite) {
+        // Currently favorite, so remove from favorites
         await removeFileFromAlbum(fileId, 'favorites');
+      } else {
+        // Not favorite, so add to favorites
+        await addFileToAlbum(fileId, 'favorites');
       }
+    } else {
+      // No favorites album exists, just toggle the flag directly
+      final updatedFile = file.toggleFavorite();
+      await updateFile(updatedFile);
+      return updatedFile;
     }
 
-    return updatedFile;
+    // Return the updated file
+    return await getFileById(fileId);
   }
 
   /// Get favorite files

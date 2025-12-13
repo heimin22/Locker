@@ -9,6 +9,7 @@ import '../services/file_import_service.dart';
 import '../themes/app_colors.dart';
 import '../utils/toast_utils.dart';
 import 'albums_screen.dart';
+import 'favorites_screen.dart';
 import 'media_viewer_screen.dart';
 import 'document_viewer_screen.dart';
 import '../widgets/permission_warning_banner.dart';
@@ -991,7 +992,11 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
             ),
             onTap: () {
               Navigator.pop(context);
-              ToastUtils.showInfo('Favorites coming soon');
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const FavoritesScreen()),
+              );
             },
           ),
           ListTile(

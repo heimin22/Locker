@@ -144,9 +144,10 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
 
   void _toggleFavorite() async {
     final file = widget.files[_currentIndex];
+    final wasFavorite = file.isFavorite;
     await ref.read(vaultNotifierProvider.notifier).toggleFavorite(file.id);
     ToastUtils.showSuccess(
-      file.isFavorite ? 'Removed from favorites' : 'Added to favorites',
+      wasFavorite ? 'Removed from favorites' : 'Added to favorites',
     );
   }
 
@@ -443,6 +444,9 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
             // Use customChild for encrypted images to handle decode errors
             return PhotoViewGalleryPageOptions.customChild(
               child: PhotoView.customChild(
+                minScale: PhotoViewComputedScale.contained,
+                maxScale: PhotoViewComputedScale.covered * 3,
+                heroAttributes: PhotoViewHeroAttributes(tag: file.id),
                 child: Image.memory(
                   data,
                   fit: BoxFit.contain,
@@ -451,9 +455,6 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                     return _buildImageErrorPlaceholder(file);
                   },
                 ),
-                minScale: PhotoViewComputedScale.contained,
-                maxScale: PhotoViewComputedScale.covered * 3,
-                heroAttributes: PhotoViewHeroAttributes(tag: file.id),
               ),
             );
           }
@@ -468,6 +469,9 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
         // Use customChild with Image.file for proper error handling
         return PhotoViewGalleryPageOptions.customChild(
           child: PhotoView.customChild(
+            minScale: PhotoViewComputedScale.contained,
+            maxScale: PhotoViewComputedScale.covered * 3,
+            heroAttributes: PhotoViewHeroAttributes(tag: file.id),
             child: Image.file(
               File(file.vaultPath),
               fit: BoxFit.contain,
@@ -476,9 +480,6 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                 return _buildImageErrorPlaceholder(file);
               },
             ),
-            minScale: PhotoViewComputedScale.contained,
-            maxScale: PhotoViewComputedScale.covered * 3,
-            heroAttributes: PhotoViewHeroAttributes(tag: file.id),
           ),
         );
       },
