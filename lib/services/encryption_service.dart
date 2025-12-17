@@ -224,6 +224,81 @@ class EncryptionService {
     }
   }
 
+  /// Encrypt a file using chunked streaming (memory-efficient for large files)
+  /// Processes file in chunks to avoid loading entire file into memory
+  /// Uses CTR mode for streaming (CBC requires full blocks, not suitable for streaming)
+  Future<FileEncryptionResult> encryptFileStreamed(
+    String sourcePath,
+    String destinationPath, {
+    bool isDecoy = false,
+    Function(int bytesProcessed, int totalBytes)? onProgress,
+  }) async {
+    try {
+      final sourceFile = File(sourcePath);
+      if (!await sourceFile.exists()) {
+        return FileEncryptionResult(
+          success: false,
+          error: 'Source file does not exist',
+        );
+      }
+
+      final key = isDecoy ? await _ensureDecoyKey() : await _ensureMasterKey();
+      final iv = generateIV();
+      final totalBytes = await sourceFile.length();
+
+      // Use CTR mode for streaming - it's a stream cipher that doesn't require padding
+      final ctr = CTRStreamCipher(AESEngine())
+        ..init(true, ParametersWithIV<KeyParameter>(KeyParameter(key), iv));
+
+      final destFile = File(destinationPath);
+      final sink = destFile.openWrite();
+
+      // Write 8-byte header: 4 bytes magic + 4 bytes original file size
+      // Magic bytes help identify streamed encrypted files
+      final header = Uint8List(8);
+      header[0] = 0x4C; // 'L'
+      header[1] = 0x4B; // 'K'
+      header[2] = 0x52; // 'R'
+      header[3] = 0x53; // 'S' (Locker Streamed)
+      // Store original file size (little-endian)
+      header[4] = (totalBytes & 0xFF);
+      header[5] = ((totalBytes >> 8) & 0xFF);
+      header[6] = ((totalBytes >> 16) & 0xFF);
+      header[7] = ((totalBytes >> 24) & 0xFF);
+      sink.add(header);
+
+      int bytesProcessed = 0;
+
+      final inputStream = sourceFile.openRead();
+      await for (final chunk in inputStream) {
+        final encrypted = ctr.process(Uint8List.fromList(chunk));
+        sink.add(encrypted);
+
+        bytesProcessed += chunk.length;
+        onProgress?.call(bytesProcessed, totalBytes);
+      }
+
+      await sink.flush();
+      await sink.close();
+
+      final encryptedSize = await destFile.length();
+
+      return FileEncryptionResult(
+        success: true,
+        encryptedPath: destinationPath,
+        iv: base64Encode(iv),
+        originalSize: totalBytes,
+        encryptedSize: encryptedSize,
+      );
+    } catch (e) {
+      debugPrint('File streaming encryption error: $e');
+      return FileEncryptionResult(
+        success: false,
+        error: 'File streaming encryption failed: $e',
+      );
+    }
+  }
+
   /// Decrypt a file and return the decrypted file path
   Future<FileDecryptionResult> decryptFile(
     String encryptedPath,
@@ -270,6 +345,145 @@ class EncryptionService {
     } catch (e) {
       debugPrint('File decryption error: $e');
       return FileDecryptionResult(
+        success: false,
+        error: 'File decryption failed: $e',
+      );
+    }
+  }
+
+  /// Decrypt a file using chunked streaming (memory-efficient for large files)
+  /// Matches the format created by encryptFileStreamed (8-byte header + CTR encrypted data)
+  Future<FileDecryptionResult> decryptFileStreamed(
+    String encryptedPath,
+    String destinationPath,
+    String ivBase64, {
+    bool isDecoy = false,
+    Function(int bytesProcessed, int totalBytes)? onProgress,
+  }) async {
+    try {
+      final encryptedFile = File(encryptedPath);
+      if (!await encryptedFile.exists()) {
+        return FileDecryptionResult(
+          success: false,
+          error: 'Encrypted file does not exist',
+        );
+      }
+
+      final key = isDecoy ? await _ensureDecoyKey() : await _ensureMasterKey();
+      final iv = base64Decode(ivBase64);
+      final encryptedSize = await encryptedFile.length();
+
+      // Open file and read header
+      final raf = await encryptedFile.open();
+      final header = await raf.read(8);
+
+      // Verify magic bytes
+      if (header.length < 8 ||
+          header[0] != 0x4C ||
+          header[1] != 0x4B ||
+          header[2] != 0x52 ||
+          header[3] != 0x53) {
+        await raf.close();
+        return FileDecryptionResult(
+          success: false,
+          error: 'Invalid encrypted file format (not a streamed file)',
+        );
+      }
+
+      // Read original file size from header (little-endian)
+      final originalSize =
+          header[4] | (header[5] << 8) | (header[6] << 16) | (header[7] << 24);
+
+      await raf.close();
+
+      // Use CTR mode for streaming decryption
+      final ctr = CTRStreamCipher(AESEngine())
+        ..init(false, ParametersWithIV<KeyParameter>(KeyParameter(key), iv));
+
+      final destFile = File(destinationPath);
+      final sink = destFile.openWrite();
+
+      final totalBytes = encryptedSize - 8; // Subtract header size
+      int bytesProcessed = 0;
+
+      // Read encrypted data after header
+      final inputStream = encryptedFile.openRead(8); // Skip 8-byte header
+      await for (final chunk in inputStream) {
+        final decrypted = ctr.process(Uint8List.fromList(chunk));
+        sink.add(decrypted);
+
+        bytesProcessed += chunk.length;
+        onProgress?.call(bytesProcessed, totalBytes);
+      }
+
+      await sink.flush();
+      await sink.close();
+
+      return FileDecryptionResult(
+        success: true,
+        decryptedPath: destinationPath,
+        decryptedSize: originalSize,
+      );
+    } catch (e) {
+      debugPrint('File streaming decryption error: $e');
+      return FileDecryptionResult(
+        success: false,
+        error: 'File streaming decryption failed: $e',
+      );
+    }
+  }
+
+  /// Decrypt streamed file to memory (for viewing without writing to disk)
+  /// Supports both CBC-encrypted files (legacy) and CTR-encrypted streamed files
+  Future<DecryptionResult> decryptStreamedFileToMemory(
+    String encryptedPath,
+    String ivBase64, {
+    bool isDecoy = false,
+  }) async {
+    try {
+      final encryptedFile = File(encryptedPath);
+      if (!await encryptedFile.exists()) {
+        return DecryptionResult(
+          success: false,
+          error: 'Encrypted file does not exist',
+        );
+      }
+
+      final encryptedData = await encryptedFile.readAsBytes();
+
+      // Check for streamed file magic bytes
+      if (encryptedData.length >= 8 &&
+          encryptedData[0] == 0x4C &&
+          encryptedData[1] == 0x4B &&
+          encryptedData[2] == 0x52 &&
+          encryptedData[3] == 0x53) {
+        // This is a CTR-encrypted streamed file
+        final key =
+            isDecoy ? await _ensureDecoyKey() : await _ensureMasterKey();
+        final iv = base64Decode(ivBase64);
+
+        final ctr = CTRStreamCipher(AESEngine())
+          ..init(false, ParametersWithIV<KeyParameter>(KeyParameter(key), iv));
+
+        // Skip 8-byte header and decrypt
+        final dataToDecrypt = Uint8List.sublistView(encryptedData, 8);
+        final decrypted = ctr.process(dataToDecrypt);
+
+        return DecryptionResult(
+          success: true,
+          data: decrypted,
+        );
+      } else {
+        // Fall back to CBC decryption for legacy files
+        return await decryptData(
+          encryptedData,
+          ivBase64,
+          isDecoy: isDecoy,
+        );
+      }
+    } catch (e) {
+      debugPrint('Streamed file decryption to memory error: $e');
+      return DecryptionResult(
         success: false,
         error: 'File decryption failed: $e',
       );
