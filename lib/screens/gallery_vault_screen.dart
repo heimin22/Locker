@@ -2951,14 +2951,7 @@ class _ImportOptionsSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: _ImportOptionTile(
-                        icon: Icons.folder_open_outlined,
-                        label: 'Any File',
-                        color: Colors.blueGrey,
-                        onTap: onImportAnyFiles,
-                      ),
-                    ),
+                    const Expanded(child: SizedBox()),
                     const SizedBox(width: 12),
                     const Expanded(child: SizedBox()),
                   ],
