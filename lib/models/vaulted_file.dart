@@ -383,17 +383,10 @@ const List<String> supportedDocumentExtensions = [
   'pdf',
   'doc',
   'docx',
-  'xls',
-  'xlsx',
-  'ppt',
-  'pptx',
   'txt',
   'rtf',
-  'csv',
   'odt',
-  'ods',
-  'odp',
-  'epub'
+  'epub',
 ];
 
 /// Get file type from extension

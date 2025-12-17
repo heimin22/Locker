@@ -625,6 +625,67 @@ class FileImportService {
     }
   }
 
+  /// Import a single file from a path (e.g. from custom camera)
+  Future<ImportResult> importFile({
+    required String filePath,
+    bool deleteOriginal = true,
+  }) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return ImportResult(
+          success: false,
+          error: 'File does not exist',
+          importedFiles: [],
+        );
+      }
+
+      final fileName = file.path.split('/').last;
+      final mimeType = lookupMimeType(filePath) ?? 'application/octet-stream';
+
+      // Auto-detect type
+      VaultedFileType type;
+      if (mimeType.startsWith('image/')) {
+        type = VaultedFileType.image;
+      } else if (mimeType.startsWith('video/')) {
+        type = VaultedFileType.video;
+      } else {
+        // Fallback or check extension
+        type = getFileTypeFromMime(mimeType);
+      }
+
+      final imported = await _vaultService.addFile(
+        sourcePath: filePath,
+        originalName: fileName,
+        type: type,
+        mimeType: mimeType,
+        deleteOriginal: deleteOriginal,
+      );
+
+      if (imported == null) {
+        return ImportResult(
+          success: false,
+          error: 'Failed to save file to vault',
+          importedFiles: [],
+        );
+      }
+
+      return ImportResult(
+        success: true,
+        importedFiles: [imported],
+        message: 'File imported successfully',
+        deletedOriginals: deleteOriginal,
+      );
+    } catch (e) {
+      debugPrint('Error importing file: $e');
+      return ImportResult(
+        success: false,
+        error: 'Failed to import file: $e',
+        importedFiles: [],
+      );
+    }
+  }
+
   /// Import documents from file manager
   Future<ImportResult> importDocuments({
     bool deleteOriginals = true,

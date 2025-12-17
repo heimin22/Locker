@@ -20,6 +20,7 @@ import '../widgets/permission_warning_banner.dart';
 import 'media_picker_screen.dart';
 import 'document_picker_screen.dart';
 import 'package:photo_manager/photo_manager.dart' hide AlbumType;
+import 'camera_screen.dart';
 
 /// Gallery vault screen - main screen after authentication
 class GalleryVaultScreen extends ConsumerStatefulWidget {
@@ -2649,9 +2650,23 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
 
   Future<void> _capturePhoto() async {
     Navigator.pop(context);
+
+    // Open custom camera
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CameraScreen(initialMode: CameraMode.photo),
+      ),
+    );
+
+    if (imagePath == null) return;
+
     setState(() => _isImporting = true);
 
-    final result = await _importService.capturePhotoFromCamera();
+    final result = await _importService.importFile(
+      filePath: imagePath,
+      deleteOriginal: true,
+    );
 
     setState(() => _isImporting = false);
 
@@ -2665,9 +2680,23 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
 
   Future<void> _recordVideo() async {
     Navigator.pop(context);
+
+    // Open custom camera
+    final String? videoPath = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CameraScreen(initialMode: CameraMode.video),
+      ),
+    );
+
+    if (videoPath == null) return;
+
     setState(() => _isImporting = true);
 
-    final result = await _importService.recordVideoFromCamera();
+    final result = await _importService.importFile(
+      filePath: videoPath,
+      deleteOriginal: true,
+    );
 
     setState(() => _isImporting = false);
 
