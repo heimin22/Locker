@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../models/vaulted_file.dart';
 import '../providers/vault_providers.dart';
@@ -116,6 +118,103 @@ class _DocumentViewerScreenState extends ConsumerState<DocumentViewerScreen> {
     ToastUtils.showSuccess(
       widget.file.isFavorite ? 'Removed from favorites' : 'Added to favorites',
     );
+  }
+
+  Future<void> _exportToDownloads() async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.lightBackground,
+          content: Row(
+            children: [
+              CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.accent)),
+              const SizedBox(width: 20),
+              Expanded(
+                  child: Text('Exporting ${widget.file.originalName}...',
+                      style: const TextStyle(fontFamily: 'ProductSans'))),
+            ],
+          ),
+        ),
+      );
+
+      Directory? downloadsDir;
+      if (Platform.isAndroid) {
+        downloadsDir = Directory('/storage/emulated/0/Download');
+        if (!await downloadsDir.exists()) {
+          downloadsDir = await getExternalStorageDirectory();
+        }
+      } else {
+        downloadsDir = await getDownloadsDirectory();
+      }
+
+      if (downloadsDir == null) {
+        if (mounted) Navigator.pop(context);
+        ToastUtils.showError('Could not access Downloads folder');
+        return;
+      }
+
+      final destinationPath =
+          '${downloadsDir.path}/${widget.file.originalName}';
+      final vaultService = ref.read(vaultServiceProvider);
+      final exportedFile =
+          await vaultService.exportFile(widget.file.id, destinationPath);
+
+      if (mounted) Navigator.pop(context);
+
+      if (exportedFile != null) {
+        ToastUtils.showSuccess(
+            'Exported to Downloads/${widget.file.originalName}');
+      } else {
+        ToastUtils.showError('Failed to export file');
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint('Error exporting file: $e');
+      ToastUtils.showError('Failed to export file: $e');
+    }
+  }
+
+  Future<void> _openWithExternalApp() async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.lightBackground,
+          content: Row(
+            children: [
+              CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.accent)),
+              const SizedBox(width: 20),
+              Expanded(
+                  child: Text('Preparing ${widget.file.originalName}...',
+                      style: const TextStyle(fontFamily: 'ProductSans'))),
+            ],
+          ),
+        ),
+      );
+
+      final vaultService = ref.read(vaultServiceProvider);
+      final decryptedFile = await vaultService.getVaultedFile(widget.file.id);
+
+      if (mounted) Navigator.pop(context);
+
+      if (decryptedFile != null && await decryptedFile.exists()) {
+        final result = await OpenFilex.open(decryptedFile.path);
+        if (result.type != ResultType.done) {
+          ToastUtils.showError('No app found to open this file type');
+        }
+      } else {
+        ToastUtils.showError('Failed to prepare file');
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint('Error opening file: $e');
+      ToastUtils.showError('Failed to open file: $e');
+    }
   }
 
   void _showFileInfo() {
@@ -398,17 +497,33 @@ class _DocumentViewerScreenState extends ConsumerState<DocumentViewerScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              ToastUtils.showInfo('Export coming soon');
-            },
-            icon: const Icon(Icons.download),
-            label: const Text('Export'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _exportToDownloads,
+                icon: const Icon(Icons.download),
+                label: const Text('Export'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+              const SizedBox(width: 16),
+              OutlinedButton.icon(
+                onPressed: _openWithExternalApp,
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open with...'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.accent,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  side: BorderSide(color: AppColors.accent),
+                ),
+              ),
+            ],
           ),
         ],
       ),

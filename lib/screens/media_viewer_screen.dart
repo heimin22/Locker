@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:video_player/video_player.dart';
@@ -511,6 +513,199 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
         ],
       ),
     );
+  }
+
+  void _showExportOptions(VaultedFile file) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.lightBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.lightBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Export Options',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.lightTextPrimary,
+                      fontFamily: 'ProductSans',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.download_outlined,
+                          color: AppColors.accent),
+                    ),
+                    title: const Text('Export to Downloads',
+                        style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontWeight: FontWeight.w500)),
+                    subtitle: Text('Save file to Downloads folder',
+                        style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 12,
+                            color: AppColors.lightTextSecondary)),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _exportToDownloads(file);
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.open_in_new, color: Colors.blue),
+                    ),
+                    title: const Text('Open with...',
+                        style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontWeight: FontWeight.w500)),
+                    subtitle: Text('Open file with an external app',
+                        style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 12,
+                            color: AppColors.lightTextSecondary)),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _openWithExternalApp(file);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: MediaQuery.of(context).padding.bottom),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportToDownloads(VaultedFile file) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.lightBackground,
+          content: Row(
+            children: [
+              CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.accent)),
+              const SizedBox(width: 20),
+              Expanded(
+                  child: Text('Exporting ${file.originalName}...',
+                      style: const TextStyle(fontFamily: 'ProductSans'))),
+            ],
+          ),
+        ),
+      );
+
+      Directory? downloadsDir;
+      if (Platform.isAndroid) {
+        downloadsDir = Directory('/storage/emulated/0/Download');
+        if (!await downloadsDir.exists()) {
+          downloadsDir = await getExternalStorageDirectory();
+        }
+      } else {
+        downloadsDir = await getDownloadsDirectory();
+      }
+
+      if (downloadsDir == null) {
+        if (mounted) Navigator.pop(context);
+        ToastUtils.showError('Could not access Downloads folder');
+        return;
+      }
+
+      final destinationPath = '${downloadsDir.path}/${file.originalName}';
+      final vaultService = ref.read(vaultServiceProvider);
+      final exportedFile =
+          await vaultService.exportFile(file.id, destinationPath);
+
+      if (mounted) Navigator.pop(context);
+
+      if (exportedFile != null) {
+        ToastUtils.showSuccess('Exported to Downloads/${file.originalName}');
+      } else {
+        ToastUtils.showError('Failed to export file');
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint('Error exporting file: $e');
+      ToastUtils.showError('Failed to export file: $e');
+    }
+  }
+
+  Future<void> _openWithExternalApp(VaultedFile file) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.lightBackground,
+          content: Row(
+            children: [
+              CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.accent)),
+              const SizedBox(width: 20),
+              Expanded(
+                  child: Text('Preparing ${file.originalName}...',
+                      style: const TextStyle(fontFamily: 'ProductSans'))),
+            ],
+          ),
+        ),
+      );
+
+      final vaultService = ref.read(vaultServiceProvider);
+      final decryptedFile = await vaultService.getVaultedFile(file.id);
+
+      if (mounted) Navigator.pop(context);
+
+      if (decryptedFile != null && await decryptedFile.exists()) {
+        final result = await OpenFilex.open(decryptedFile.path);
+        if (result.type != ResultType.done) {
+          ToastUtils.showError('No app found to open this file type');
+        }
+      } else {
+        ToastUtils.showError('Failed to prepare file');
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      debugPrint('Error opening file: $e');
+      ToastUtils.showError('Failed to open file: $e');
+    }
   }
 
   @override
@@ -1050,12 +1245,10 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
                     ),
                     onPressed: _showSlideshowSettings,
                   ),
-                // Share placeholder
+                // Share/Export
                 IconButton(
                   icon: const Icon(Icons.share, color: Colors.white),
-                  onPressed: () {
-                    ToastUtils.showInfo('Share coming soon');
-                  },
+                  onPressed: () => _showExportOptions(file),
                 ),
                 // Delete
                 IconButton(
