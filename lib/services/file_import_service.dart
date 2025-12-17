@@ -6,6 +6,7 @@ import 'package:mime/mime.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import '../models/vaulted_file.dart';
+import 'auto_kill_service.dart';
 import 'office_converter_service.dart';
 import 'permission_service.dart';
 import 'vault_service.dart';
@@ -26,7 +27,8 @@ class FileImportService {
   }) async {
     try {
       // Request permission
-      final permission = await PhotoManager.requestPermissionExtend();
+      final permission = await AutoKillService.runSafe(
+          () => PhotoManager.requestPermissionExtend());
       if (!permission.hasAccess) {
         return ImportResult(
           success: false,
@@ -43,9 +45,10 @@ class FileImportService {
       }
 
       // Pick multiple images using image_picker for UI
-      final images = await _imagePicker.pickMultiImage(
-        imageQuality: 100,
-      );
+      final images =
+          await AutoKillService.runSafe(() => _imagePicker.pickMultiImage(
+                imageQuality: 100,
+              ));
 
       if (images.isEmpty) {
         return ImportResult(
@@ -400,7 +403,8 @@ class FileImportService {
   }) async {
     try {
       // Request permission
-      final permission = await PhotoManager.requestPermissionExtend();
+      final permission = await AutoKillService.runSafe(
+          () => PhotoManager.requestPermissionExtend());
       if (!permission.hasAccess) {
         return ImportResult(
           success: false,
@@ -417,10 +421,11 @@ class FileImportService {
       }
 
       // Pick videos using file_picker for multiple selection
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: true,
-      );
+      final result =
+          await AutoKillService.runSafe(() => FilePicker.platform.pickFiles(
+                type: FileType.video,
+                allowMultiple: true,
+              ));
 
       if (result == null || result.files.isEmpty) {
         return ImportResult(
@@ -497,7 +502,8 @@ class FileImportService {
   Future<ImportResult> capturePhotoFromCamera() async {
     try {
       // Request camera permission
-      final hasPermission = await _permissionService.requestCameraPermission();
+      final hasPermission = await AutoKillService.runSafe(
+          () => _permissionService.requestCameraPermission());
       if (!hasPermission) {
         return ImportResult(
           success: false,
@@ -507,10 +513,10 @@ class FileImportService {
       }
 
       // Capture photo
-      final image = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 100,
-      );
+      final image = await AutoKillService.runSafe(() => _imagePicker.pickImage(
+            source: ImageSource.camera,
+            imageQuality: 100,
+          ));
 
       if (image == null) {
         return ImportResult(
@@ -559,8 +565,10 @@ class FileImportService {
   }) async {
     try {
       // Request permissions
-      final hasCamera = await _permissionService.requestCameraPermission();
-      final hasMic = await _permissionService.requestMicrophonePermission();
+      final hasCamera = await AutoKillService.runSafe(
+          () => _permissionService.requestCameraPermission());
+      final hasMic = await AutoKillService.runSafe(
+          () => _permissionService.requestMicrophonePermission());
 
       if (!hasCamera) {
         return ImportResult(
@@ -579,10 +587,10 @@ class FileImportService {
       }
 
       // Record video
-      final video = await _imagePicker.pickVideo(
-        source: ImageSource.camera,
-        maxDuration: maxDuration ?? const Duration(minutes: 10),
-      );
+      final video = await AutoKillService.runSafe(() => _imagePicker.pickVideo(
+            source: ImageSource.camera,
+            maxDuration: maxDuration ?? const Duration(minutes: 10),
+          ));
 
       if (video == null) {
         return ImportResult(
@@ -693,11 +701,12 @@ class FileImportService {
   }) async {
     try {
       // Pick documents
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: supportedDocumentExtensions,
-        allowMultiple: true,
-      );
+      final result =
+          await AutoKillService.runSafe(() => FilePicker.platform.pickFiles(
+                type: FileType.custom,
+                allowedExtensions: supportedDocumentExtensions,
+                allowMultiple: true,
+              ));
 
       if (result == null || result.files.isEmpty) {
         return ImportResult(
@@ -1151,10 +1160,11 @@ class FileImportService {
   }) async {
     try {
       // Pick any files
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        allowMultiple: true,
-      );
+      final result =
+          await AutoKillService.runSafe(() => FilePicker.platform.pickFiles(
+                type: FileType.any,
+                allowMultiple: true,
+              ));
 
       if (result == null || result.files.isEmpty) {
         return ImportResult(
@@ -1245,7 +1255,8 @@ class FileImportService {
   }) async {
     try {
       // Request permissions
-      final permission = await PhotoManager.requestPermissionExtend();
+      final permission = await AutoKillService.runSafe(
+          () => PhotoManager.requestPermissionExtend());
       if (!permission.hasAccess) {
         return ImportResult(
           success: false,
@@ -1262,10 +1273,11 @@ class FileImportService {
       }
 
       // Pick media files (images and videos)
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.media,
-        allowMultiple: true,
-      );
+      final result =
+          await AutoKillService.runSafe(() => FilePicker.platform.pickFiles(
+                type: FileType.media,
+                allowMultiple: true,
+              ));
 
       if (result == null || result.files.isEmpty) {
         return ImportResult(

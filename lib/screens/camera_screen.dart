@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/auto_kill_service.dart';
 import '../themes/app_colors.dart';
 import 'dart:ui';
 
@@ -76,11 +77,14 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _initializeCamera() async {
     try {
-      // Check permissions
-      Map<Permission, PermissionStatus> statuses = await [
-        Permission.camera,
-        Permission.microphone,
-      ].request();
+      // Check permissions safely (disable auto-kill while dialog is shown)
+      Map<Permission, PermissionStatus> statuses =
+          await AutoKillService.runSafe(() async {
+        return await [
+          Permission.camera,
+          Permission.microphone,
+        ].request();
+      });
 
       if (statuses[Permission.camera] != PermissionStatus.granted) {
         if (mounted) Navigator.pop(context);
