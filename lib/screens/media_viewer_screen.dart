@@ -430,7 +430,7 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: AppColors.accent,
+        activeThumbColor: AppColors.accent,
       ),
     );
   }
