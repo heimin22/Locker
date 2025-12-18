@@ -408,7 +408,7 @@ This application:
 For questions, suggestions, or bug reports:
 
 - Open an issue on GitHub
-- Email: fyketonel@gmail.com
+- Email: athrundiscinity@protonmail.com
 
 ---
 
