@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'auto_kill_service.dart';
 
 /// Service for handling app permissions for media and file access
 class PermissionService {
@@ -9,74 +10,84 @@ class PermissionService {
 
   /// Request permissions for photos/images access
   Future<bool> requestPhotosPermission() async {
-    if (Platform.isAndroid) {
-      // Android 13+ uses granular permissions
-      final androidInfo = await _getAndroidSdkVersion();
-      if (androidInfo >= 33) {
+    return AutoKillService.runSafe(() async {
+      if (Platform.isAndroid) {
+        // Android 13+ uses granular permissions
+        final androidInfo = await _getAndroidSdkVersion();
+        if (androidInfo >= 33) {
+          final status = await Permission.photos.request();
+          return status.isGranted || status.isLimited;
+        } else {
+          final status = await Permission.storage.request();
+          return status.isGranted;
+        }
+      } else if (Platform.isIOS) {
         final status = await Permission.photos.request();
         return status.isGranted || status.isLimited;
-      } else {
-        final status = await Permission.storage.request();
-        return status.isGranted;
       }
-    } else if (Platform.isIOS) {
-      final status = await Permission.photos.request();
-      return status.isGranted || status.isLimited;
-    }
-    return false;
+      return false;
+    });
   }
 
   /// Request permissions for videos access
   Future<bool> requestVideosPermission() async {
-    if (Platform.isAndroid) {
-      final androidInfo = await _getAndroidSdkVersion();
-      if (androidInfo >= 33) {
-        final status = await Permission.videos.request();
+    return AutoKillService.runSafe(() async {
+      if (Platform.isAndroid) {
+        final androidInfo = await _getAndroidSdkVersion();
+        if (androidInfo >= 33) {
+          final status = await Permission.videos.request();
+          return status.isGranted || status.isLimited;
+        } else {
+          final status = await Permission.storage.request();
+          return status.isGranted;
+        }
+      } else if (Platform.isIOS) {
+        final status = await Permission.photos.request();
         return status.isGranted || status.isLimited;
-      } else {
-        final status = await Permission.storage.request();
-        return status.isGranted;
       }
-    } else if (Platform.isIOS) {
-      final status = await Permission.photos.request();
-      return status.isGranted || status.isLimited;
-    }
-    return false;
+      return false;
+    });
   }
 
   /// Request permissions for camera access
   Future<bool> requestCameraPermission() async {
-    final status = await Permission.camera.request();
-    return status.isGranted;
+    return AutoKillService.runSafe(() async {
+      final status = await Permission.camera.request();
+      return status.isGranted;
+    });
   }
 
   /// Request permissions for microphone access (for video recording)
   Future<bool> requestMicrophonePermission() async {
-    final status = await Permission.microphone.request();
-    return status.isGranted;
+    return AutoKillService.runSafe(() async {
+      final status = await Permission.microphone.request();
+      return status.isGranted;
+    });
   }
 
   /// Request permissions for file/document access
   Future<bool> requestStoragePermission() async {
-    if (Platform.isAndroid) {
-      final androidInfo = await _getAndroidSdkVersion();
-      if (androidInfo >= 30) {
-        // Android 11+ may need MANAGE_EXTERNAL_STORAGE for full access
-        final status = await Permission.manageExternalStorage.request();
-        if (status.isGranted) return true;
+    return AutoKillService.runSafe(() async {
+      if (Platform.isAndroid) {
+        final androidInfo = await _getAndroidSdkVersion();
+        if (androidInfo >= 30) {
+          // Android 11+ may need MANAGE_EXTERNAL_STORAGE for full access
+          final status = await Permission.manageExternalStorage.request();
+          if (status.isGranted) return true;
 
-        // Fall back to regular storage permission
-        final storageStatus = await Permission.storage.request();
-        return storageStatus.isGranted;
-      } else {
-        final status = await Permission.storage.request();
-        return status.isGranted;
+          // Fall back to regular storage permission
+          final storageStatus = await Permission.storage.request();
+          return storageStatus.isGranted;
+        } else {
+          final status = await Permission.storage.request();
+          return status.isGranted;
+        }
+      } else if (Platform.isIOS) {
+        // iOS doesn't need explicit storage permission for file picker
+        return true;
       }
-    } else if (Platform.isIOS) {
-      // iOS doesn't need explicit storage permission for file picker
-      return true;
-    }
-    return false;
+      return false;
+    });
   }
 
   /// Request "All Files Access" permission for hiding files
@@ -85,33 +96,35 @@ class PermissionService {
   Future<bool> requestAllFilesAccess() async {
     if (!Platform.isAndroid) return true;
 
-    final androidInfo = await _getAndroidSdkVersion();
+    return AutoKillService.runSafe(() async {
+      final androidInfo = await _getAndroidSdkVersion();
 
-    if (androidInfo >= 30) {
-      // Check if already granted
-      final isGranted = await Permission.manageExternalStorage.isGranted;
-      if (isGranted) return true;
+      if (androidInfo >= 30) {
+        // Check if already granted
+        final isGranted = await Permission.manageExternalStorage.isGranted;
+        if (isGranted) return true;
 
-      // Request the permission - this will prompt user to go to settings
-      final status = await Permission.manageExternalStorage.request();
+        // Request the permission - this will prompt user to go to settings
+        final status = await Permission.manageExternalStorage.request();
 
-      if (status.isPermanentlyDenied) {
-        // Open settings directly for user to grant permission
-        await openAppSettings();
-        // Return false as we can't confirm if user granted permission
-        return false;
+        if (status.isPermanentlyDenied) {
+          // Open settings directly for user to grant permission
+          await openAppSettings();
+          // Return false as we can't confirm if user granted permission
+          return false;
+        }
+
+        return status.isGranted;
+      } else if (androidInfo >= 29) {
+        // Android 10 - requestLegacyExternalStorage is used
+        final status = await Permission.storage.request();
+        return status.isGranted;
+      } else {
+        // Android 9 and below - just need storage permission
+        final status = await Permission.storage.request();
+        return status.isGranted;
       }
-
-      return status.isGranted;
-    } else if (androidInfo >= 29) {
-      // Android 10 - requestLegacyExternalStorage is used
-      final status = await Permission.storage.request();
-      return status.isGranted;
-    } else {
-      // Android 9 and below - just need storage permission
-      final status = await Permission.storage.request();
-      return status.isGranted;
-    }
+    });
   }
 
   /// Check if "All Files Access" permission is granted
@@ -129,82 +142,117 @@ class PermissionService {
 
   /// Request all media permissions at once
   Future<MediaPermissionResult> requestAllMediaPermissions() async {
-    bool photos = false;
-    bool videos = false;
-    bool camera = false;
-    bool storage = false;
-    bool allFilesAccess = false;
+    return AutoKillService.runSafe(() async {
+      bool photos = false;
+      bool videos = false;
+      bool camera = false;
+      bool storage = false;
+      bool allFilesAccess = false;
 
-    if (Platform.isAndroid) {
-      final androidInfo = await _getAndroidSdkVersion();
+      if (Platform.isAndroid) {
+        final androidInfo = await _getAndroidSdkVersion();
 
-      if (androidInfo >= 33) {
-        // Android 13+ granular permissions
+        if (androidInfo >= 33) {
+          // Android 13+ granular permissions
+          final results = await [
+            Permission.photos,
+            Permission.videos,
+            Permission.camera,
+          ].request();
+
+          photos = results[Permission.photos]?.isGranted ?? false;
+          videos = results[Permission.videos]?.isGranted ?? false;
+          camera = results[Permission.camera]?.isGranted ?? false;
+          storage = true; // file_picker handles this on Android 13+
+
+          // Request all files access for hiding files
+          // Note: We're already inside runSafe, so we call the internal implementation
+          allFilesAccess = await _requestAllFilesAccessInternal(androidInfo);
+        } else if (androidInfo >= 30) {
+          // Android 11-12
+          final results = await [
+            Permission.storage,
+            Permission.camera,
+          ].request();
+
+          final storageGranted =
+              results[Permission.storage]?.isGranted ?? false;
+          photos = storageGranted;
+          videos = storageGranted;
+          storage = storageGranted;
+          camera = results[Permission.camera]?.isGranted ?? false;
+
+          // Request all files access for hiding files
+          allFilesAccess = await _requestAllFilesAccessInternal(androidInfo);
+        } else {
+          // Android 10 and below
+          final results = await [
+            Permission.storage,
+            Permission.camera,
+          ].request();
+
+          final storageGranted =
+              results[Permission.storage]?.isGranted ?? false;
+          photos = storageGranted;
+          videos = storageGranted;
+          storage = storageGranted;
+          camera = results[Permission.camera]?.isGranted ?? false;
+          allFilesAccess = storageGranted; // Storage permission is sufficient
+        }
+      } else if (Platform.isIOS) {
         final results = await [
           Permission.photos,
-          Permission.videos,
           Permission.camera,
+          Permission.microphone,
         ].request();
 
-        photos = results[Permission.photos]?.isGranted ?? false;
-        videos = results[Permission.videos]?.isGranted ?? false;
+        final photosStatus = results[Permission.photos];
+        photos = (photosStatus?.isGranted ?? false) ||
+            (photosStatus?.isLimited ?? false);
+        videos = photos; // Same permission on iOS
         camera = results[Permission.camera]?.isGranted ?? false;
-        storage = true; // file_picker handles this on Android 13+
-
-        // Request all files access for hiding files
-        allFilesAccess = await requestAllFilesAccess();
-      } else if (androidInfo >= 30) {
-        // Android 11-12
-        final results = await [
-          Permission.storage,
-          Permission.camera,
-        ].request();
-
-        final storageGranted = results[Permission.storage]?.isGranted ?? false;
-        photos = storageGranted;
-        videos = storageGranted;
-        storage = storageGranted;
-        camera = results[Permission.camera]?.isGranted ?? false;
-
-        // Request all files access for hiding files
-        allFilesAccess = await requestAllFilesAccess();
-      } else {
-        // Android 10 and below
-        final results = await [
-          Permission.storage,
-          Permission.camera,
-        ].request();
-
-        final storageGranted = results[Permission.storage]?.isGranted ?? false;
-        photos = storageGranted;
-        videos = storageGranted;
-        storage = storageGranted;
-        camera = results[Permission.camera]?.isGranted ?? false;
-        allFilesAccess = storageGranted; // Storage permission is sufficient
+        storage = true; // file_picker handles this on iOS
+        allFilesAccess = true; // iOS handles file access differently
       }
-    } else if (Platform.isIOS) {
-      final results = await [
-        Permission.photos,
-        Permission.camera,
-        Permission.microphone,
-      ].request();
 
-      final photosStatus = results[Permission.photos];
-      photos = (photosStatus?.isGranted ?? false) ||
-          (photosStatus?.isLimited ?? false);
-      videos = photos; // Same permission on iOS
-      camera = results[Permission.camera]?.isGranted ?? false;
-      storage = true; // file_picker handles this on iOS
-      allFilesAccess = true; // iOS handles file access differently
+      return MediaPermissionResult(
+        photos: photos,
+        videos: videos,
+        camera: camera,
+        storage: storage,
+        allFilesAccess: allFilesAccess,
+      );
+    });
+  }
+
+  /// Internal method for requesting all files access (doesn't wrap in runSafe)
+  /// Used when already inside a runSafe block
+  Future<bool> _requestAllFilesAccessInternal(int androidVersion) async {
+    if (androidVersion >= 30) {
+      // Check if already granted
+      final isGranted = await Permission.manageExternalStorage.isGranted;
+      if (isGranted) return true;
+
+      // Request the permission - this will prompt user to go to settings
+      final status = await Permission.manageExternalStorage.request();
+
+      if (status.isPermanentlyDenied) {
+        // Open settings directly for user to grant permission
+        await openAppSettings();
+        // Return false as we can't confirm if user granted permission
+        return false;
+      }
+
+      return status.isGranted;
+    } else if (androidVersion >= 29) {
+      // Android 10 - requestLegacyExternalStorage is used
+      final status = await Permission.storage.request();
+      return status.isGranted;
+    } else {
+      // Android 9 and below - just need storage permission
+      final status = await Permission.storage.request();
+      return status.isGranted;
     }
-
-    return MediaPermissionResult(
-      photos: photos,
-      videos: videos,
-      camera: camera,
-      storage: storage,
-      allFilesAccess: allFilesAccess,
-    );
   }
 
   /// Check if photos permission is granted
