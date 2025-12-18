@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 
 class AutoKillService {
   static const MethodChannel _channel =
-      MethodChannel('com.example.locker/autokill');
+      MethodChannel('com.ultraelectronica.locker/autokill');
 
   /// Set whether the auto-kill feature (killing app on pause) is enabled.
   /// Set to [false] before requesting permissions or launching external intents.
