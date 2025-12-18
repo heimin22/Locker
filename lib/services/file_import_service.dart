@@ -1460,7 +1460,8 @@ class FileImportService {
       debugPrint(
           '[FileImport] Calling PhotoManager.editor.deleteWithIds with ${ids.length} IDs');
 
-      final result = await PhotoManager.editor.deleteWithIds(ids);
+      final result = await AutoKillService.runSafe(
+          () => PhotoManager.editor.deleteWithIds(ids));
 
       debugPrint(
           '[FileImport] Delete result: ${result.length} assets deleted successfully');

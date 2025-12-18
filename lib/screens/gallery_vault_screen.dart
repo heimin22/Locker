@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/vaulted_file.dart';
 import '../models/album.dart';
 import '../providers/vault_providers.dart';
+import '../services/auto_kill_service.dart';
 import '../services/file_import_service.dart';
 import '../themes/app_colors.dart';
 import '../utils/toast_utils.dart';
@@ -1149,7 +1150,8 @@ class _GalleryVaultScreenState extends ConsumerState<GalleryVaultScreen>
       if (mounted) Navigator.pop(context);
 
       if (decryptedFile != null && await decryptedFile.exists()) {
-        final result = await OpenFilex.open(decryptedFile.path);
+        final result = await AutoKillService.runSafe(
+            () => OpenFilex.open(decryptedFile.path));
         if (result.type != ResultType.done) {
           ToastUtils.showError('No app found to open this file type');
         }

@@ -1292,7 +1292,7 @@ class VaultSettings {
   final String? decoyPin; // Separate PIN for decoy mode
 
   const VaultSettings({
-    this.encryptionEnabled = true,
+    this.encryptionEnabled = false,
     this.secureDelete = true,
     this.defaultSort = SortOption.dateAddedNewest,
     this.showHiddenFiles = false,
@@ -1337,7 +1337,7 @@ class VaultSettings {
 
   factory VaultSettings.fromJson(Map<String, dynamic> json) {
     return VaultSettings(
-      encryptionEnabled: json['encryptionEnabled'] as bool? ?? true,
+      encryptionEnabled: json['encryptionEnabled'] as bool? ?? false,
       secureDelete: json['secureDelete'] as bool? ?? true,
       defaultSort: SortOption.values.firstWhere(
         (s) => s.name == (json['defaultSort'] as String? ?? 'dateAddedNewest'),

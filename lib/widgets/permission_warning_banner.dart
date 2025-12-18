@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/auto_kill_service.dart';
 import '../services/permission_service.dart';
 
 /// A warning banner that displays when "All Files Access" permission is not granted.
@@ -83,7 +84,7 @@ class _PermissionWarningBannerState extends State<PermissionWarningBanner>
   }
 
   Future<void> _openSettings() async {
-    await openAppSettings();
+    await AutoKillService.runSafe(() => openAppSettings());
   }
 
   @override
@@ -299,7 +300,8 @@ class _CompactPermissionWarningState extends State<CompactPermissionWarning>
     }
 
     return GestureDetector(
-      onTap: widget.onTap ?? () => openAppSettings(),
+      onTap: widget.onTap ??
+          () => AutoKillService.runSafe(() => openAppSettings()),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(

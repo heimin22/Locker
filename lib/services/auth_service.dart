@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:local_auth_android/local_auth_android.dart';
 import 'package:local_auth_darwin/local_auth_darwin.dart';
+import 'auto_kill_service.dart';
 
 /// Authentication service that handles password and biometric authentication
 class AuthService {
@@ -146,18 +147,19 @@ class AuthService {
       final isEnabled = await isBiometricEnabled();
       if (!isEnabled) return false;
 
-      final isAuthenticated = await _localAuth.authenticate(
-        localizedReason: reason,
-        authMessages: [
-          const AndroidAuthMessages(
-            signInTitle: 'Biometric authentication required',
-            cancelButton: 'No thanks',
-          ),
-          const IOSAuthMessages(
-            cancelButton: 'No thanks',
-          ),
-        ],
-      );
+      final isAuthenticated =
+          await AutoKillService.runSafe(() => _localAuth.authenticate(
+                localizedReason: reason,
+                authMessages: [
+                  const AndroidAuthMessages(
+                    signInTitle: 'Biometric authentication required',
+                    cancelButton: 'No thanks',
+                  ),
+                  const IOSAuthMessages(
+                    cancelButton: 'No thanks',
+                  ),
+                ],
+              ));
 
       return isAuthenticated;
     } on PlatformException catch (e) {
@@ -197,18 +199,19 @@ class AuthService {
       }
 
       debugPrint('[AuthService] Requesting biometric authentication...');
-      final isAuthenticated = await _localAuth.authenticate(
-        localizedReason: 'Set up biometric authentication',
-        authMessages: [
-          const AndroidAuthMessages(
-            signInTitle: 'Set up biometric authentication',
-            cancelButton: 'Cancel setup',
-          ),
-          const IOSAuthMessages(
-            cancelButton: 'Cancel setup',
-          ),
-        ],
-      );
+      final isAuthenticated =
+          await AutoKillService.runSafe(() => _localAuth.authenticate(
+                localizedReason: 'Set up biometric authentication',
+                authMessages: [
+                  const AndroidAuthMessages(
+                    signInTitle: 'Set up biometric authentication',
+                    cancelButton: 'Cancel setup',
+                  ),
+                  const IOSAuthMessages(
+                    cancelButton: 'Cancel setup',
+                  ),
+                ],
+              ));
 
       debugPrint('[AuthService] Authentication result: $isAuthenticated');
 

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
+import '../services/auto_kill_service.dart';
 import '../themes/app_colors.dart';
 
 /// A custom media picker that uses PhotoManager to directly access gallery assets.
@@ -58,7 +59,8 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
   }
 
   Future<void> _loadAlbums() async {
-    final permission = await PhotoManager.requestPermissionExtend();
+    final permission = await AutoKillService.runSafe(
+        () => PhotoManager.requestPermissionExtend());
     if (!permission.hasAccess) {
       if (mounted) {
         Navigator.pop(context, null);

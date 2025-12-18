@@ -9,6 +9,7 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'package:video_player/video_player.dart';
 import '../models/vaulted_file.dart';
 import '../providers/vault_providers.dart';
+import '../services/auto_kill_service.dart';
 import '../themes/app_colors.dart';
 import '../utils/toast_utils.dart';
 
@@ -694,7 +695,8 @@ class _MediaViewerScreenState extends ConsumerState<MediaViewerScreen> {
       if (mounted) Navigator.pop(context);
 
       if (decryptedFile != null && await decryptedFile.exists()) {
-        final result = await OpenFilex.open(decryptedFile.path);
+        final result = await AutoKillService.runSafe(
+            () => OpenFilex.open(decryptedFile.path));
         if (result.type != ResultType.done) {
           ToastUtils.showError('No app found to open this file type');
         }
